@@ -1,0 +1,11 @@
+-- FCM push notification token for the mobile technician app.
+-- Allows the backend to send targeted push notifications to a specific
+-- technician device via Firebase Cloud Messaging (FCM).
+-- Nullable: most users will not have an FCM token until they log in
+-- on a device that registers for push notifications.
+-- No uniqueness constraint: a technician may switch devices and the old
+-- token is silently replaced; duplicate tokens across users are handled
+-- at the application layer, not the database.
+-- Rollback:
+--   ALTER TABLE "users" DROP COLUMN "fcm_token";
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "fcm_token" text;

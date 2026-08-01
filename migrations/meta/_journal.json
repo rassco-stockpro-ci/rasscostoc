@@ -183,6 +183,13 @@
       "when": 1784500007000,
       "tag": "0025_erp_users_telegram_user_id",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784500008000,
+      "tag": "0026_add_users_fcm_token",
+      "breakpoints": true
     }
   ]
 }
