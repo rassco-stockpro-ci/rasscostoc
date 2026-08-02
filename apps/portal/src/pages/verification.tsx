@@ -357,21 +357,20 @@ export default function VerificationPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Status Styling Resolver
+  // Status Styling Resolver - RASSCO Enterprise Tokens
   const resolveStatusBadge = (colorKey?: string) => {
     switch (colorKey) {
       case "green":
-        return "bg-emerald-100 text-emerald-900 border-emerald-300 shadow-xs";
       case "teal":
-        return "bg-teal-100 text-teal-900 border-teal-300 shadow-xs";
+        return "rassco-badge-technician shadow-xs";
       case "blue":
-        return "bg-blue-100 text-blue-900 border-blue-300 shadow-xs";
+        return "rassco-badge-warehouse shadow-xs";
       case "orange":
-        return "bg-amber-100 text-amber-900 border-amber-300 shadow-xs";
+        return "rassco-badge-transit shadow-xs";
       case "red":
-        return "bg-rose-100 text-rose-900 border-rose-300 shadow-xs";
+        return "rassco-badge-damaged shadow-xs";
       default:
-        return "bg-slate-100 text-slate-800 border-slate-300 shadow-xs";
+        return "rassco-badge-closed shadow-xs";
     }
   };
 
@@ -411,30 +410,27 @@ export default function VerificationPage() {
   const displayedTimeline = filteredTimeline.slice(0, visibleTimelineCount);
 
   return (
-    <div className="space-y-8 font-['Cairo'] pb-20" dir="rtl">
-      {/* Top Banner Header */}
-      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-teal-700 via-cyan-800 to-slate-900 p-8 text-white shadow-xl shadow-teal-950/20">
-        <div className="absolute -left-12 -top-12 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl pointer-events-none" />
-        <div className="absolute right-1/3 -bottom-16 h-48 w-48 rounded-full bg-teal-400/20 blur-2xl pointer-events-none" />
-        
+    <div className="verification-page-wrapper space-y-8 font-['Cairo'] pb-20 rassco-bg-page" dir="rtl">
+      {/* Top Banner Header - RASSCO Tokens */}
+      <header className="relative overflow-hidden rounded-3xl rassco-card-surface border rassco-border-default p-8 shadow-sm">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/15 backdrop-blur-md text-xs font-semibold text-cyan-200 border border-white/20">
-              <Activity className="w-4 h-4 text-cyan-300 animate-pulse" />
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full rassco-header-badge text-xs font-semibold">
+              <Activity className="w-4 h-4 rassco-icon-brand" />
               <span>STOCKPRO — نظام تتبع رحلة الأصل والدورة الحياتية الميدانية</span>
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight flex items-center gap-3">
-              <QrCode className="w-8 h-8 text-cyan-300" />
+            <h1 className="text-3xl font-extrabold tracking-tight flex items-center gap-3 rassco-text-main">
+              <QrCode className="w-8 h-8 rassco-icon-brand" />
               بوابة تتبع ودورة حياة الرقم التسلسلي
             </h1>
-            <p className="text-teal-100 text-sm max-w-2xl opacity-95 leading-relaxed">
+            <p className="rassco-text-muted text-sm max-w-2xl leading-relaxed">
               استعلام وتتبع كامل للأجهزة، الباركودات، وشرائح SIM الميدانية مع سجل شفاف يوضح المسند إليه ومسؤول الأكشن والتوقيت بدقة.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <Link href="/home">
-              <Button variant="outline" className="bg-white/15 hover:bg-white/25 text-white border-white/25 backdrop-blur-md transition-all font-bold rounded-2xl shadow-sm">
+              <Button variant="outline" className="rassco-btn-secondary font-bold rounded-2xl shadow-sm">
                 <ArrowRight className="ml-2 h-4 w-4" />
                 لوحة التحكم الرئيسية
               </Button>
@@ -445,19 +441,19 @@ export default function VerificationPage() {
 
       {/* Main Content Layout */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Search Panel (4 Columns) */}
-        <Card className="lg:col-span-4 bg-white/90 backdrop-blur-xl border border-slate-200/90 shadow-lg shadow-slate-200/50 rounded-3xl overflow-hidden flex flex-col justify-between self-start">
+        {/* Search Panel (4 Columns) - RASSCO Tokens */}
+        <Card className="lg:col-span-4 rassco-card-surface border rassco-border-default shadow-sm rounded-3xl overflow-hidden flex flex-col justify-between self-start">
           <div>
-            <CardHeader className="bg-gradient-to-b from-teal-50/90 to-transparent border-b border-slate-100 pb-6">
+            <CardHeader className="rassco-card-header border-b pb-6">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-700 flex items-center justify-center shadow-inner">
-                  <QrCode className="w-6 h-6" />
+                <div className="w-12 h-12 rounded-2xl rassco-header-badge flex items-center justify-center">
+                  <QrCode className="w-6 h-6 rassco-icon-brand" />
                 </div>
                 <div>
-                  <CardTitle className="text-slate-900 text-lg font-bold">
+                  <CardTitle className="rassco-text-main text-lg font-bold">
                     البحث عن أصل أو شريحة
                   </CardTitle>
-                  <CardDescription className="text-slate-500 text-xs mt-0.5">
+                  <CardDescription className="rassco-text-muted text-xs mt-0.5">
                     أدخل السيريال (S/N) أو IMEI أو ICCID أو الباركود
                   </CardDescription>
                 </div>
@@ -467,18 +463,18 @@ export default function VerificationPage() {
             <CardContent className="p-6 space-y-6">
               <form onSubmit={handleSearchSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <label className="text-xs font-bold rassco-text-main flex items-center justify-between">
                     <span>الرقم التسلسلي المعرف / Asset ID</span>
-                    <span className="text-slate-400 font-normal">تأطير تلقائي للبادئة</span>
+                    <span className="rassco-text-muted font-normal">تأطير تلقائي للبادئة</span>
                   </label>
                   <div className="relative">
-                    <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 h-5 w-5 rassco-icon-brand" />
                     <Input
                       ref={inputRef}
                       value={scanValue}
                       onChange={(e) => setScanValue(e.target.value)}
                       placeholder="مثال: SAW43310018885"
-                      className="pr-11 pl-4 h-12 rassco-input-glow rounded-2xl font-mono text-center text-slate-800 text-base placeholder:text-slate-400 font-bold shadow-xs"
+                      className="pr-11 pl-4 h-12 rassco-input-field rounded-2xl font-mono text-center text-base font-bold shadow-xs"
                     />
                   </div>
                 </div>
@@ -486,7 +482,7 @@ export default function VerificationPage() {
                 <div className="flex gap-2 pt-1">
                   <Button 
                     type="submit" 
-                    className="flex-1 h-11 bg-gradient-to-r from-teal-600 to-cyan-700 hover:from-teal-700 hover:to-cyan-800 text-white font-bold rounded-xl shadow-md shadow-teal-600/20 transition-all active:scale-[0.98]"
+                    className="flex-1 h-11 rassco-btn-primary font-bold rounded-xl shadow-md transition-all active:scale-[0.98]"
                   >
                     <Search className="w-4 h-4 ml-2" />
                     بدء التتبع
@@ -496,7 +492,7 @@ export default function VerificationPage() {
                       type="button" 
                       onClick={handleClear} 
                       variant="outline" 
-                      className="h-11 px-4 border-slate-200 text-slate-600 hover:bg-slate-100 font-bold rounded-xl"
+                      className="h-11 px-4 rassco-btn-secondary font-bold rounded-xl"
                     >
                       تفريغ
                     </Button>
@@ -505,27 +501,27 @@ export default function VerificationPage() {
               </form>
 
               {/* Quick Sample Buttons */}
-              <div className="pt-4 border-t border-slate-100 space-y-2.5">
-                <p className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+              <div className="pt-4 border-t rassco-border-default space-y-2.5">
+                <p className="text-xs font-bold rassco-text-muted flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 rassco-icon-brand" />
                   <span>نماذج سريعة للاختبار الفوري:</span>
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => handleQuickScan("SAW43310018885")}
-                    className="text-xs font-mono px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-teal-50 hover:text-teal-700 border border-slate-200 hover:border-teal-300 transition-all font-semibold text-slate-700"
+                    className="text-xs font-mono px-3 py-1.5 rounded-xl rassco-sample-btn transition-all font-semibold"
                   >
                     i9100: SAW43310018885
                   </button>
                   <button
                     onClick={() => handleQuickScan("SAS30810004647")}
-                    className="text-xs font-mono px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-teal-50 hover:text-teal-700 border border-slate-200 hover:border-teal-300 transition-all font-semibold text-slate-700"
+                    className="text-xs font-mono px-3 py-1.5 rounded-xl rassco-sample-btn transition-all font-semibold"
                   >
                     i9000S: SAS30810004647
                   </button>
                   <button
                     onClick={() => handleQuickScan("1180234360")}
-                    className="text-xs font-mono px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-teal-50 hover:text-teal-700 border border-slate-200 hover:border-teal-300 transition-all font-semibold text-slate-700"
+                    className="text-xs font-mono px-3 py-1.5 rounded-xl rassco-sample-btn transition-all font-semibold"
                   >
                     A960: 1180234360
                   </button>
@@ -534,8 +530,8 @@ export default function VerificationPage() {
             </CardContent>
           </div>
 
-          <CardFooter className="bg-slate-50/80 border-t border-slate-100 p-4 text-xs text-slate-500 flex items-center gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0" />
+          <CardFooter className="rassco-card-header border-t p-4 text-xs rassco-text-muted flex items-center gap-2.5">
+            <ShieldCheck className="w-4 h-4 rassco-icon-brand shrink-0" />
             <span className="leading-tight">تكامل تلقائي للتدقيق الأمني والصلاحيات الميدانية</span>
           </CardFooter>
         </Card>
@@ -544,15 +540,15 @@ export default function VerificationPage() {
         <div className="lg:col-span-8 space-y-6">
           {/* Skeleton / Loading State */}
           {isLoading && (
-            <Card className="bg-white/85 backdrop-blur-xl border border-slate-200/80 shadow-lg shadow-slate-200/50 rounded-3xl h-full min-h-[420px] flex items-center justify-center p-12">
+            <Card className="rassco-card-surface border rassco-border-default shadow-sm rounded-3xl h-full min-h-[420px] flex items-center justify-center p-12">
               <div className="text-center space-y-4">
                 <div className="relative w-16 h-16 mx-auto">
-                  <div className="w-16 h-16 border-4 border-teal-500/20 border-t-teal-600 rounded-full animate-spin" />
-                  <QrCode className="w-6 h-6 text-teal-600 absolute inset-0 m-auto" />
+                  <div className="w-16 h-16 border-4 rassco-border-brand border-t-[#00A99D] rounded-full animate-spin" />
+                  <QrCode className="w-6 h-6 rassco-icon-brand absolute inset-0 m-auto" />
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-base font-bold text-slate-800">جاري تجميع رحلة الأصل والسجل...</h4>
-                  <p className="text-slate-400 text-xs font-mono">{serialQuery}</p>
+                  <h4 className="text-base font-bold rassco-text-main">جاري تجميع رحلة الأصل والسجل...</h4>
+                  <p className="rassco-text-muted text-xs font-mono">{serialQuery}</p>
                 </div>
               </div>
             </Card>
@@ -560,14 +556,14 @@ export default function VerificationPage() {
 
           {/* Initial State */}
           {!serialQuery && !isLoading && (
-            <Card className="bg-white/60 backdrop-blur-md border border-dashed border-slate-300/80 shadow-sm rounded-3xl h-full min-h-[420px] flex items-center justify-center p-12 text-center">
+            <Card className="rassco-card-surface border border-dashed rassco-border-default shadow-sm rounded-3xl h-full min-h-[420px] flex items-center justify-center p-12 text-center">
               <div className="max-w-md space-y-4">
-                <div className="w-20 h-20 rounded-3xl bg-teal-50 border border-teal-100 text-teal-600 mx-auto flex items-center justify-center shadow-inner">
-                  <QrCode className="w-10 h-10 stroke-[1.5] animate-pulse" />
+                <div className="w-20 h-20 rounded-3xl rassco-header-badge mx-auto flex items-center justify-center shadow-inner">
+                  <QrCode className="w-10 h-10 stroke-[1.5] rassco-icon-brand animate-pulse" />
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-slate-800">امسح الباركود أو ادخل الرقم التسلسلي</h3>
-                  <p className="text-slate-500 text-sm leading-relaxed">
+                  <h3 className="text-xl font-bold rassco-text-main">امسح الباركود أو ادخل الرقم التسلسلي</h3>
+                  <p className="rassco-text-muted text-sm leading-relaxed">
                     سيتم بناء جدول تتبع زمني حديث يعرض صاحب العهدة الحالي ومسؤول الإغلاق مع كامل حركات السجل التاريخي.
                   </p>
                 </div>
@@ -577,16 +573,16 @@ export default function VerificationPage() {
 
           {/* Error State */}
           {error && !isLoading && (
-            <Card className="bg-white/85 backdrop-blur-xl border border-rose-200 shadow-lg shadow-rose-500/5 rounded-3xl h-full min-h-[420px] flex items-center justify-center p-12 text-center">
+            <Card className="rassco-card-surface border rassco-border-default shadow-sm rounded-3xl h-full min-h-[420px] flex items-center justify-center p-12 text-center">
               <div className="max-w-md space-y-4">
-                <div className="w-16 h-16 rounded-full bg-rose-50 border border-rose-100 text-rose-500 mx-auto flex items-center justify-center shadow-inner">
+                <div className="w-16 h-16 rounded-full rassco-badge-damaged mx-auto flex items-center justify-center shadow-inner">
                   <AlertCircle className="w-8 h-8" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-xl font-bold text-slate-900">تعذر العثور على الأصل</h3>
+                  <h3 className="text-xl font-bold rassco-text-main">تعذر العثور على الأصل</h3>
                   <p className="text-rose-600 text-sm font-semibold">{(error as any)?.message || t('verification.error')}</p>
                 </div>
-                <Button onClick={handleClear} variant="outline" className="border-slate-200 text-slate-700 font-bold rounded-xl mt-2">
+                <Button onClick={handleClear} variant="outline" className="rassco-btn-secondary font-bold rounded-xl mt-2">
                   إعادة المحاولة
                 </Button>
               </div>
@@ -596,8 +592,8 @@ export default function VerificationPage() {
           {/* Result Loaded */}
           {trackingData && !isLoading && (
             <div className="space-y-6">
-              {/* 1. Summary Header Card (بطاقة ملخص رحلة الجهاز) */}
-              <Card className="bg-gradient-to-r from-slate-900 via-slate-800 to-teal-950 text-white rounded-3xl p-6 md:p-8 border border-slate-800 shadow-xl relative overflow-hidden">
+              {/* 1. Summary Header Card (بطاقة ملخص رحلة الجهاز) - RASSCO Tokens */}
+              <Card className="rassco-card-surface rounded-3xl p-6 md:p-8 border rassco-border-default shadow-sm relative overflow-hidden">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
@@ -605,27 +601,27 @@ export default function VerificationPage() {
                         {trackingData.asset.statusLabel}
                       </Badge>
                       {trackingData.asset.carrierName && (
-                        <Badge className="bg-purple-500/20 text-purple-200 border border-purple-400/30 text-xs font-bold">
+                        <Badge className="rassco-badge-technician text-xs font-bold">
                           {trackingData.asset.carrierName}
                         </Badge>
                       )}
                     </div>
 
-                    <h2 className="text-2xl font-extrabold text-white pt-1">
+                    <h2 className="text-2xl font-extrabold rassco-text-main pt-1">
                       {trackingData.asset.itemTypeName}
                     </h2>
 
-                    <div className="flex items-center gap-3 text-slate-300 text-sm font-mono pt-1">
+                    <div className="flex items-center gap-3 rassco-text-muted text-sm font-mono pt-1">
                       <span>S/N:</span>
-                      <span className="text-cyan-300 font-bold text-base bg-white/10 px-3 py-1 rounded-xl border border-white/15">
+                      <span className="rassco-text-main font-bold text-base rassco-sub-surface px-3 py-1 rounded-xl border rassco-border-default">
                         {trackingData.asset.serialNumber}
                       </span>
                       <button
                         onClick={() => copyToClipboard(trackingData.asset.serialNumber)}
-                        className="p-1.5 hover:bg-white/15 rounded-lg text-slate-300 hover:text-white transition-all"
+                        className="p-1.5 rassco-sample-btn rounded-lg transition-all"
                         title="نسخ الرقم التسلسلي"
                       >
-                        {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                        {copied ? <Check className="w-4 h-4 rassco-icon-brand" /> : <Copy className="w-4 h-4 rassco-text-muted" />}
                       </button>
                     </div>
 
@@ -634,9 +630,9 @@ export default function VerificationPage() {
                         <Link href={technicianProductUrl}>
                           <Button
                             variant="outline"
-                            className="bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-100 border-cyan-400/40 backdrop-blur-md font-bold rounded-xl text-xs gap-2 transition-all shadow-sm"
+                            className="rassco-btn-secondary font-bold rounded-xl text-xs gap-2 transition-all shadow-sm"
                           >
-                            <Boxes className="w-4 h-4 text-cyan-300" />
+                            <Boxes className="w-4 h-4 rassco-icon-brand" />
                             <span>عرض تفاصيل المنتج في مخزون الفني</span>
                             <ExternalLink className="w-3.5 h-3.5" />
                           </Button>
@@ -648,18 +644,18 @@ export default function VerificationPage() {
                           <Button
                             onClick={openEditModal}
                             variant="outline"
-                            className="bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border-amber-400/40 backdrop-blur-md font-bold rounded-xl text-xs gap-1.5 transition-all shadow-sm"
+                            className="rassco-btn-secondary font-bold rounded-xl text-xs gap-1.5 transition-all shadow-sm"
                           >
-                            <Pencil className="w-3.5 h-3.5 text-amber-300" />
+                            <Pencil className="w-3.5 h-3.5 rassco-icon-brand" />
                             <span>تعديل الأصل</span>
                           </Button>
 
                           <Button
                             onClick={() => setIsDeleteOpen(true)}
                             variant="outline"
-                            className="bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border-rose-400/40 backdrop-blur-md font-bold rounded-xl text-xs gap-1.5 transition-all shadow-sm"
+                            className="rassco-btn-danger font-bold rounded-xl text-xs gap-1.5 transition-all shadow-sm"
                           >
-                            <Trash2 className="w-3.5 h-3.5 text-rose-300" />
+                            <Trash2 className="w-3.5 h-3.5 text-white" />
                             <span>حذف الأصل نهائياً</span>
                           </Button>
                         </>
@@ -668,32 +664,32 @@ export default function VerificationPage() {
                   </div>
 
                   {/* Summary Metric Badges */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 md:pt-0 border-t md:border-t-0 border-white/10">
-                    <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/15 text-center">
-                      <p className="text-[11px] text-slate-400 font-bold">صاحب العهدة</p>
-                      <p className="text-xs font-bold text-white truncate mt-0.5">{trackingData.summary.custodianName}</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 md:pt-0 border-t md:border-t-0 rassco-border-default">
+                    <div className="rassco-sub-surface p-3 rounded-2xl border rassco-border-default text-center">
+                      <p className="text-[11px] rassco-text-muted font-bold">صاحب العهدة</p>
+                      <p className="text-xs font-bold rassco-text-main truncate mt-0.5">{trackingData.summary.custodianName}</p>
                     </div>
 
-                    <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/15 text-center">
-                      <p className="text-[11px] text-slate-400 font-bold">الموقع والحركة</p>
-                      <p className="text-xs font-bold text-cyan-300 truncate mt-0.5">{trackingData.summary.locationName}</p>
+                    <div className="rassco-sub-surface p-3 rounded-2xl border rassco-border-default text-center">
+                      <p className="text-[11px] rassco-text-muted font-bold">الموقع والحركة</p>
+                      <p className="text-xs font-bold rassco-text-main truncate mt-0.5">{trackingData.summary.locationName}</p>
                     </div>
 
-                    <div className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/15 text-center col-span-2 sm:col-span-1">
-                      <p className="text-[11px] text-slate-400 font-bold">إجمالي الحركات</p>
-                      <p className="text-xs font-bold text-emerald-300 mt-0.5">{trackingData.summary.totalMovements} حركات مسجلة</p>
+                    <div className="rassco-sub-surface p-3 rounded-2xl border rassco-border-default text-center col-span-2 sm:col-span-1">
+                      <p className="text-[11px] rassco-text-muted font-bold">إجمالي الحركات</p>
+                      <p className="text-xs font-bold rassco-text-brand mt-0.5">{trackingData.summary.totalMovements} حركات مسجلة</p>
                     </div>
                   </div>
                 </div>
               </Card>
 
-              {/* 2. Current Custodian Card (بطاقة صاحب العهدة الحالي) */}
+              {/* 2. Current Custodian Card (بطاقة صاحب العهدة الحالي) - RASSCO Tokens */}
               {trackingData.currentCustodian && (
-                <Card className="bg-white/90 backdrop-blur-xl border border-teal-500/30 shadow-lg rounded-3xl overflow-hidden">
-                  <CardHeader className="bg-gradient-to-r from-teal-500/10 via-slate-50 to-white border-b border-teal-500/15 p-5">
+                <Card className="rassco-card-surface border rassco-border-default shadow-sm rounded-3xl overflow-hidden">
+                  <CardHeader className="rassco-card-header border-b p-5">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                        <UserCheck className="w-5 h-5 text-teal-600" />
+                      <h3 className="text-base font-extrabold rassco-text-main flex items-center gap-2">
+                        <UserCheck className="w-5 h-5 rassco-icon-brand" />
                         <span>بيانات صاحب العهدة الحالي</span>
                       </h3>
                       <div className="flex items-center gap-3">
@@ -702,9 +698,9 @@ export default function VerificationPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="border-teal-500/30 text-teal-800 hover:bg-teal-50 font-bold rounded-xl text-xs gap-1.5 shadow-2xs"
+                              className="rassco-btn-secondary font-bold rounded-xl text-xs gap-1.5 shadow-2xs"
                             >
-                              <Boxes className="w-3.5 h-3.5 text-teal-600" />
+                              <Boxes className="w-3.5 h-3.5 rassco-icon-brand" />
                               <span>تفاصيل المنتج في العهدة</span>
                               <ExternalLink className="w-3 h-3" />
                             </Button>
@@ -718,7 +714,7 @@ export default function VerificationPage() {
                             avatar: trackingData.currentCustodian!.avatarUrl,
                             role: "فني ميداني",
                           })}
-                          className="text-xs font-bold text-teal-700 hover:underline flex items-center gap-1"
+                          className="text-xs font-bold rassco-text-brand hover:underline flex items-center gap-1"
                         >
                           <span>عرض الملف الكامل</span>
                           <ArrowUpRight className="w-3.5 h-3.5" />
@@ -728,28 +724,28 @@ export default function VerificationPage() {
                   </CardHeader>
 
                   <CardContent className="p-6 space-y-4">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                      <Avatar className="h-16 w-16 border-2 border-teal-600 shrink-0 shadow-md">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 rassco-sub-surface p-4 rounded-2xl border rassco-border-default">
+                      <Avatar className="h-16 w-16 border-2 rassco-border-brand shrink-0 shadow-md">
                         <AvatarImage src={trackingData.currentCustodian.avatarUrl || undefined} alt={trackingData.currentCustodian.fullName} />
-                        <AvatarFallback className="bg-teal-700 text-white font-bold text-lg">
+                        <AvatarFallback className="rassco-btn-primary font-bold text-lg">
                           {trackingData.currentCustodian.fullName.slice(0, 2)}
                         </AvatarFallback>
                       </Avatar>
 
                       <div className="space-y-1 flex-1">
                         <div className="flex items-center gap-2">
-                          <h4 className="text-lg font-extrabold text-slate-900">{trackingData.currentCustodian.fullName}</h4>
-                          <Badge className="bg-teal-100 text-teal-800 border-teal-300 text-xs">
+                          <h4 className="text-lg font-extrabold rassco-text-main">{trackingData.currentCustodian.fullName}</h4>
+                          <Badge className="rassco-badge-technician text-xs">
                             {trackingData.currentCustodian.jobTitle}
                           </Badge>
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
-                          <span className="font-mono text-teal-700 font-bold flex items-center gap-1">
-                            <AtSign className="w-3 h-3 text-teal-500" />
+                        <div className="flex items-center gap-3 text-xs rassco-text-muted flex-wrap">
+                          <span className="font-mono rassco-text-brand font-bold flex items-center gap-1">
+                            <AtSign className="w-3 h-3 rassco-icon-brand" />
                             {trackingData.currentCustodian.username}
                           </span>
                           {trackingData.currentCustodian.employeeCode && (
-                            <span className="bg-white px-2 py-0.5 rounded border border-slate-200 font-mono">
+                            <span className="rassco-card-surface px-2 py-0.5 rounded border rassco-border-default font-mono">
                               كود: {trackingData.currentCustodian.employeeCode}
                             </span>
                           )}
@@ -758,23 +754,23 @@ export default function VerificationPage() {
 
                       {/* Call & WhatsApp actions */}
                       {trackingData.currentCustodian.phone && (
-                        <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200">
+                        <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 rassco-border-default">
                           <a
                             href={`tel:${trackingData.currentCustodian.phone}`}
-                            className="p-2.5 bg-white hover:bg-teal-50 text-slate-700 hover:text-teal-700 rounded-xl border border-slate-200 shadow-2xs transition-all flex items-center gap-1 text-xs font-bold"
+                            className="p-2.5 rassco-btn-secondary rounded-xl shadow-2xs transition-all flex items-center gap-1 text-xs font-bold"
                             title="اتصال تلفوني"
                           >
-                            <Phone className="w-4 h-4 text-teal-600" />
+                            <Phone className="w-4 h-4 rassco-icon-brand" />
                             <span>اتصال</span>
                           </a>
                           <a
                             href={`https://wa.me/${trackingData.currentCustodian.phone.replace(/[^0-9]/g, '')}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 shadow-2xs transition-all flex items-center gap-1 text-xs font-bold"
+                            className="p-2.5 rassco-btn-success rounded-xl shadow-2xs transition-all flex items-center gap-1 text-xs font-bold"
                             title="مراسلة واتساب"
                           >
-                            <MessageCircle className="w-4 h-4 text-emerald-600" />
+                            <MessageCircle className="w-4 h-4 text-white" />
                             <span>واتساب</span>
                           </a>
                         </div>
@@ -782,75 +778,75 @@ export default function VerificationPage() {
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                      <div className="bg-white p-3 rounded-xl border border-slate-200">
-                        <p className="text-slate-400 font-bold">المنطقة والمدينة</p>
-                        <p className="text-slate-900 font-bold mt-0.5">{trackingData.currentCustodian.regionName} — {trackingData.currentCustodian.city}</p>
+                      <div className="rassco-sub-surface p-3 rounded-xl border rassco-border-default">
+                        <p className="rassco-text-muted font-bold">المنطقة والمدينة</p>
+                        <p className="rassco-text-main font-bold mt-0.5">{trackingData.currentCustodian.regionName} — {trackingData.currentCustodian.city}</p>
                       </div>
 
-                      <div className="bg-white p-3 rounded-xl border border-slate-200">
-                        <p className="text-slate-400 font-bold">المستودع التابع له</p>
-                        <p className="text-slate-900 font-bold mt-0.5">{trackingData.currentCustodian.warehouseName}</p>
+                      <div className="rassco-sub-surface p-3 rounded-xl border rassco-border-default">
+                        <p className="rassco-text-muted font-bold">المستودع التابع له</p>
+                        <p className="rassco-text-main font-bold mt-0.5">{trackingData.currentCustodian.warehouseName}</p>
                       </div>
 
-                      <div className="bg-white p-3 rounded-xl border border-slate-200">
-                        <p className="text-slate-400 font-bold">تاريخ الاستلام</p>
-                        <p className="text-slate-900 font-mono font-bold mt-0.5">{formatFullDateTime(trackingData.currentCustodian.receivedAt)}</p>
+                      <div className="rassco-sub-surface p-3 rounded-xl border rassco-border-default">
+                        <p className="rassco-text-muted font-bold">تاريخ الاستلام</p>
+                        <p className="rassco-text-main font-mono font-bold mt-0.5">{formatFullDateTime(trackingData.currentCustodian.receivedAt)}</p>
                       </div>
 
-                      <div className="bg-white p-3 rounded-xl border border-slate-200">
-                        <p className="text-slate-400 font-bold">مدة وجود العهدة</p>
-                        <p className="text-teal-700 font-extrabold mt-0.5">{trackingData.currentCustodian.custodyDurationDays} أيام متواصلة</p>
+                      <div className="rassco-sub-surface p-3 rounded-xl border rassco-border-default">
+                        <p className="rassco-text-muted font-bold">مدة وجود العهدة</p>
+                        <p className="rassco-text-brand font-extrabold mt-0.5">{trackingData.currentCustodian.custodyDurationDays} أيام متواصلة</p>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
               )}
 
-              {/* 3. Last Action Responsible Card (بطاقة المسؤول عن آخر إجراء) */}
+              {/* 3. Last Action Responsible Card (بطاقة المسؤول عن آخر إجراء) - RASSCO Tokens */}
               {trackingData.lastActionBy && (
-                <Card className="bg-white/90 backdrop-blur-xl border border-slate-200 shadow-lg rounded-3xl overflow-hidden">
-                  <CardHeader className="bg-slate-50 border-b border-slate-100 p-5">
+                <Card className="rassco-card-surface border rassco-border-default shadow-sm rounded-3xl overflow-hidden">
+                  <CardHeader className="rassco-card-header border-b p-5">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                        <ShieldCheck className="w-5 h-5 text-teal-600" />
+                      <h3 className="text-base font-extrabold rassco-text-main flex items-center gap-2">
+                        <ShieldCheck className="w-5 h-5 rassco-icon-brand" />
                         <span>المسؤول عن آخر إجراء</span>
                       </h3>
-                      <Badge variant="outline" className="bg-white text-slate-700 border-slate-300 text-xs font-mono font-bold">
+                      <Badge variant="outline" className="rassco-card-surface rassco-text-main border rassco-border-default text-xs font-mono font-bold">
                         {trackingData.lastActionBy.actionNumber}
                       </Badge>
                     </div>
                   </CardHeader>
 
                   <CardContent className="p-6 space-y-4">
-                    <div className="flex items-center gap-4 bg-slate-50/80 p-4 rounded-2xl border border-slate-200">
-                      <Avatar className="h-14 w-14 border-2 border-cyan-600 shrink-0">
+                    <div className="flex items-center gap-4 rassco-sub-surface p-4 rounded-2xl border rassco-border-default">
+                      <Avatar className="h-14 w-14 border-2 rassco-border-brand shrink-0">
                         <AvatarImage src={trackingData.lastActionBy.avatarUrl || undefined} alt={trackingData.lastActionBy.fullName} />
-                        <AvatarFallback className="bg-cyan-800 text-white font-bold">
+                        <AvatarFallback className="rassco-btn-primary font-bold">
                           {trackingData.lastActionBy.fullName.slice(0, 2)}
                         </AvatarFallback>
                       </Avatar>
 
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <h4 className="text-base font-extrabold text-slate-900 truncate">{trackingData.lastActionBy.fullName}</h4>
-                          <Badge className="bg-cyan-100 text-cyan-900 border-cyan-300 text-xs">
+                          <h4 className="text-base font-extrabold rassco-text-main truncate">{trackingData.lastActionBy.fullName}</h4>
+                          <Badge className="rassco-badge-technician text-xs">
                             {trackingData.lastActionBy.roleLabel}
                           </Badge>
                         </div>
-                        <p className="text-xs font-mono text-cyan-700 font-bold flex items-center gap-1">
-                          <AtSign className="w-3 h-3 text-cyan-500" />
+                        <p className="text-xs font-mono rassco-text-brand font-bold flex items-center gap-1">
+                          <AtSign className="w-3 h-3 rassco-icon-brand" />
                           {trackingData.lastActionBy.username}
                         </p>
                       </div>
 
                       <div className="text-left shrink-0">
-                        <p className="text-xs font-mono font-bold text-slate-700">{formatFullDateTime(trackingData.lastActionBy.occurredAt)}</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">{trackingData.lastActionBy.regionName}</p>
+                        <p className="text-xs font-mono font-bold rassco-text-main">{formatFullDateTime(trackingData.lastActionBy.occurredAt)}</p>
+                        <p className="text-[11px] rassco-text-muted mt-0.5">{trackingData.lastActionBy.regionName}</p>
                       </div>
                     </div>
 
                     {trackingData.lastActionBy.notes && (
-                      <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-900 italic">
+                      <div className="p-3 rassco-sub-surface border rassco-border-default rounded-xl text-xs rassco-text-main italic">
                         ملاحظات العملية: {trackingData.lastActionBy.notes}
                       </div>
                     )}
@@ -858,16 +854,16 @@ export default function VerificationPage() {
                 </Card>
               )}
 
-              {/* 4. Closure Details Card (بطاقة بيانات الإغلاق) */}
+              {/* 4. Closure Details Card (بطاقة بيانات الإغلاق) - RASSCO Tokens */}
               {trackingData.closure?.isClosed && (
-                <Card className="bg-gradient-to-br from-emerald-500/10 via-teal-50 to-white border border-emerald-500/30 shadow-lg rounded-3xl overflow-hidden">
-                  <CardHeader className="bg-emerald-500/15 border-b border-emerald-500/20 p-5">
+                <Card className="rassco-card-surface border rassco-border-default shadow-sm rounded-3xl overflow-hidden">
+                  <CardHeader className="rassco-card-header border-b p-5">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-base font-extrabold text-emerald-950 flex items-center gap-2">
-                        <FileCheck className="w-5 h-5 text-emerald-600" />
+                      <h3 className="text-base font-extrabold rassco-text-main flex items-center gap-2">
+                        <FileCheck className="w-5 h-5 text-[#10B981]" />
                         <span>بيانات وتوثيق الإغلاق النهائي</span>
                       </h3>
-                      <Badge className="bg-emerald-600 text-white font-extrabold px-3 py-1 text-xs">
+                      <Badge className="rassco-btn-success text-white font-extrabold px-3 py-1 text-xs">
                         عملية مكتملة ومغلقة
                       </Badge>
                     </div>
@@ -875,25 +871,25 @@ export default function VerificationPage() {
 
                   <CardContent className="p-6 space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                      <div className="bg-white p-3.5 rounded-xl border border-emerald-500/20 space-y-1">
-                        <p className="text-slate-400 font-bold">تاريخ وساعة الإغلاق</p>
-                        <p className="text-slate-900 font-mono font-extrabold">{formatFullDateTime(trackingData.closure.closedAt)}</p>
+                      <div className="rassco-sub-surface p-3.5 rounded-xl border rassco-border-default space-y-1">
+                        <p className="rassco-text-muted font-bold">تاريخ وساعة الإغلاق</p>
+                        <p className="rassco-text-main font-mono font-extrabold">{formatFullDateTime(trackingData.closure.closedAt)}</p>
                       </div>
 
-                      <div className="bg-white p-3.5 rounded-xl border border-emerald-500/20 space-y-1">
-                        <p className="text-slate-400 font-bold">المسؤول عن الإغلاق</p>
-                        <p className="text-slate-900 font-bold">{trackingData.closure.closedByName} (@{trackingData.closure.closedByUsername})</p>
+                      <div className="rassco-sub-surface p-3.5 rounded-xl border rassco-border-default space-y-1">
+                        <p className="rassco-text-muted font-bold">المسؤول عن الإغلاق</p>
+                        <p className="rassco-text-main font-bold">{trackingData.closure.closedByName} (@{trackingData.closure.closedByUsername})</p>
                       </div>
 
-                      <div className="bg-white p-3.5 rounded-xl border border-emerald-500/20 space-y-1">
-                        <p className="text-slate-400 font-bold">رقم الطلب والعميل</p>
-                        <p className="text-emerald-800 font-mono font-extrabold">{trackingData.closure.orderNumber} — {trackingData.closure.clientName}</p>
+                      <div className="rassco-sub-surface p-3.5 rounded-xl border rassco-border-default space-y-1">
+                        <p className="rassco-text-muted font-bold">رقم الطلب والعميل</p>
+                        <p className="rassco-text-brand font-mono font-extrabold">{trackingData.closure.orderNumber} — {trackingData.closure.clientName}</p>
                       </div>
                     </div>
 
                     {trackingData.closure.notes && (
-                      <div className="p-3 bg-white border border-emerald-500/20 rounded-xl text-xs text-slate-700">
-                        <span className="font-bold text-emerald-900">ملاحظات التوثيق: </span>
+                      <div className="p-3 rassco-sub-surface border rassco-border-default rounded-xl text-xs rassco-text-main">
+                        <span className="font-bold rassco-text-brand">ملاحظات التوثيق: </span>
                         {trackingData.closure.notes}
                       </div>
                     )}
@@ -901,26 +897,26 @@ export default function VerificationPage() {
                 </Card>
               )}
 
-              {/* 5. Linked Identifiers (الأصول المرتبطة) */}
+              {/* 5. Linked Identifiers (الأصول المرتبطة) - RASSCO Tokens */}
               {trackingData.linkedIdentifiers.length > 0 && (
-                <Card className="bg-white/90 backdrop-blur-xl border border-purple-200 shadow-md rounded-3xl overflow-hidden">
-                  <CardHeader className="bg-purple-50/80 border-b border-purple-100 p-5">
-                    <h3 className="text-base font-extrabold text-purple-950 flex items-center gap-2">
-                      <Handshake className="w-5 h-5 text-purple-600" />
+                <Card className="rassco-card-surface border rassco-border-default shadow-sm rounded-3xl overflow-hidden">
+                  <CardHeader className="rassco-card-header border-b p-5">
+                    <h3 className="text-base font-extrabold rassco-text-main flex items-center gap-2">
+                      <Handshake className="w-5 h-5 rassco-icon-brand" />
                       <span>الأصول وشرائح الاتصالات المرتبطة</span>
                     </h3>
                   </CardHeader>
                   <CardContent className="p-6 space-y-3">
                     {trackingData.linkedIdentifiers.map((link, idx) => (
-                      <div key={idx} className="flex items-center justify-between bg-purple-50/40 p-4 rounded-2xl border border-purple-200">
+                      <div key={idx} className="flex items-center justify-between rassco-sub-surface p-4 rounded-2xl border rassco-border-default">
                         <div className="space-y-1">
-                          <p className="text-xs font-bold text-purple-900">{link.type} ({link.carrierName})</p>
-                          <p className="text-sm font-mono font-extrabold text-purple-950">{link.serialNumber}</p>
+                          <p className="text-xs font-bold rassco-text-muted">{link.type} ({link.carrierName})</p>
+                          <p className="text-sm font-mono font-extrabold rassco-text-main">{link.serialNumber}</p>
                         </div>
                         <Button
                           onClick={() => handleQuickScan(link.serialNumber)}
                           variant="outline"
-                          className="border-purple-300 text-purple-800 hover:bg-purple-100 text-xs font-bold rounded-xl"
+                          className="rassco-btn-secondary text-xs font-bold rounded-xl"
                         >
                           تتبع الشريحة
                         </Button>
@@ -930,16 +926,16 @@ export default function VerificationPage() {
                 </Card>
               )}
 
-              {/* 6. Advanced Shipment-Style Audit Timeline (التسلسل الزمني الحديث) */}
-              <Card className="bg-white/90 backdrop-blur-xl border border-slate-200 shadow-xl rounded-3xl overflow-hidden">
-                <CardHeader className="bg-slate-50 border-b border-slate-200 p-6">
+              {/* 6. Advanced Shipment-Style Audit Timeline (التسلسل الزمني الحديث) - RASSCO Tokens */}
+              <Card className="rassco-card-surface border rassco-border-default shadow-sm rounded-3xl overflow-hidden">
+                <CardHeader className="rassco-card-header border-b p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                      <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                        <GitCommit className="w-5 h-5 text-teal-600" />
+                      <CardTitle className="text-lg font-bold rassco-text-main flex items-center gap-2">
+                        <GitCommit className="w-5 h-5 rassco-icon-brand" />
                         <span>رحلة الأصل والتسلسل الزمني للعمليات</span>
                       </CardTitle>
-                      <CardDescription className="text-xs text-slate-500 mt-1">
+                      <CardDescription className="text-xs rassco-text-muted mt-1">
                         انقر على أي حدث لعرض التوثيق الفني الكامل والأجهزة ومصدر الأكشن
                       </CardDescription>
                     </div>
@@ -949,28 +945,28 @@ export default function VerificationPage() {
                       <Button
                         onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
                         variant="outline"
-                        className="h-9 text-xs font-bold border-slate-200 rounded-xl flex items-center gap-1.5"
+                        className="h-9 text-xs font-bold rassco-btn-secondary rounded-xl flex items-center gap-1.5"
                       >
                         <ArrowUpDown className="w-3.5 h-3.5" />
                         <span>{sortOrder === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}</span>
                       </Button>
 
-                      <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+                      <div className="flex items-center rassco-sub-surface p-1 rounded-xl border rassco-border-default text-xs font-bold">
                         <button
                           onClick={() => setTimelineFilter("ALL")}
-                          className={`px-2.5 py-1 rounded-lg transition-all ${timelineFilter === "ALL" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500"}`}
+                          className={`px-2.5 py-1 rounded-lg transition-all ${timelineFilter === "ALL" ? "rassco-card-surface rassco-text-main shadow-2xs" : "rassco-text-muted"}`}
                         >
                           الكل
                         </button>
                         <button
                           onClick={() => setTimelineFilter("CUSTODY")}
-                          className={`px-2.5 py-1 rounded-lg transition-all ${timelineFilter === "CUSTODY" ? "bg-white text-teal-700 shadow-2xs" : "text-slate-500"}`}
+                          className={`px-2.5 py-1 rounded-lg transition-all ${timelineFilter === "CUSTODY" ? "rassco-card-surface rassco-text-brand shadow-2xs" : "rassco-text-muted"}`}
                         >
                           العهدة
                         </button>
                         <button
                           onClick={() => setTimelineFilter("CLOSING")}
-                          className={`px-2.5 py-1 rounded-lg transition-all ${timelineFilter === "CLOSING" ? "bg-white text-emerald-700 shadow-2xs" : "text-slate-500"}`}
+                          className={`px-2.5 py-1 rounded-lg transition-all ${timelineFilter === "CLOSING" ? "rassco-card-surface text-[#10B981] shadow-2xs" : "rassco-text-muted"}`}
                         >
                           الإغلاق
                         </button>
@@ -980,7 +976,7 @@ export default function VerificationPage() {
                 </CardHeader>
 
                 <CardContent className="p-6 md:p-8">
-                  <div className="relative pr-6 border-r-2 border-teal-500/30 space-y-8">
+                  <div className="relative pr-6 border-r-2 rassco-border-brand space-y-8">
                     {displayedTimeline.map((item, index) => {
                       const isLatest = index === 0 && sortOrder === "desc";
 
@@ -988,13 +984,13 @@ export default function VerificationPage() {
                         <div
                           key={item.eventId}
                           onClick={() => setSelectedEvent(item)}
-                          className={`relative group bg-slate-50/80 hover:bg-teal-50/60 p-5 rounded-2xl border transition-all cursor-pointer shadow-2xs hover:shadow-md ${
-                            isLatest ? "border-teal-500/50 ring-2 ring-teal-500/20" : "border-slate-200 hover:border-teal-300"
+                          className={`relative group rassco-sub-surface hover:rassco-card-header p-5 rounded-2xl border transition-all cursor-pointer shadow-2xs hover:shadow-md ${
+                            isLatest ? "rassco-border-brand ring-2 ring-[#00A99D]/20" : "rassco-border-default hover:rassco-border-brand"
                           }`}
                         >
                           {/* Circle on line */}
                           <div className={`absolute -right-[31px] top-6 w-4 h-4 rounded-full border-2 border-white ring-4 transition-all ${
-                            isLatest ? "bg-teal-600 ring-teal-500/30 animate-pulse" : "bg-slate-400 ring-slate-200 group-hover:bg-teal-500"
+                            isLatest ? "bg-[#00A99D] ring-[#00A99D]/30 animate-pulse" : "bg-slate-400 ring-slate-200 group-hover:bg-[#00A99D]"
                           }`} />
 
                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1003,37 +999,37 @@ export default function VerificationPage() {
                                 <Badge className={`${resolveStatusBadge(item.statusColor)} text-xs font-bold px-2.5 py-0.5`}>
                                   {item.statusToLabel}
                                 </Badge>
-                                <span className="text-xs font-extrabold text-slate-800">{item.title}</span>
+                                <span className="text-xs font-extrabold rassco-text-main">{item.title}</span>
                               </div>
 
-                              <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
-                                <div className="flex items-center gap-1.5 font-bold text-slate-900">
-                                  <Avatar className="h-5 w-5 border border-slate-300">
+                              <div className="flex items-center gap-2 text-xs rassco-text-muted flex-wrap">
+                                <div className="flex items-center gap-1.5 font-bold rassco-text-main">
+                                  <Avatar className="h-5 w-5 border rassco-border-default">
                                     <AvatarImage src={item.actor.avatarUrl || undefined} />
-                                    <AvatarFallback className="bg-slate-700 text-white text-[9px]">
+                                    <AvatarFallback className="rassco-btn-primary text-white text-[9px]">
                                       {item.actor.name.slice(0, 1)}
                                     </AvatarFallback>
                                   </Avatar>
                                   <span>{item.actor.name}</span>
-                                  <span className="text-[11px] font-mono text-slate-400">(@{item.actor.username})</span>
+                                  <span className="text-[11px] font-mono rassco-text-muted">(@{item.actor.username})</span>
                                 </div>
                                 <span>•</span>
-                                <span className="text-slate-500">{item.location?.name || "المستودع الرئيسي"}</span>
+                                <span className="rassco-text-muted">{item.location?.name || "المستودع الرئيسي"}</span>
                               </div>
 
                               {item.description && (
-                                <p className="text-xs text-slate-500 italic">
+                                <p className="text-xs rassco-text-muted italic">
                                   {item.description}
                                 </p>
                               )}
                             </div>
 
                             <div className="text-left shrink-0 space-y-1">
-                              <p className="text-xs font-mono font-bold text-teal-800 flex items-center justify-end gap-1">
-                                <Clock className="w-3.5 h-3.5 text-teal-600" />
+                              <p className="text-xs font-mono font-bold rassco-text-brand flex items-center justify-end gap-1">
+                                <Clock className="w-3.5 h-3.5 rassco-icon-brand" />
                                 <span>{formatFullDateTime(item.occurredAt)}</span>
                               </p>
-                              <span className="text-[11px] font-bold text-teal-600 group-hover:underline flex items-center justify-end gap-1">
+                              <span className="text-[11px] font-bold rassco-text-brand group-hover:underline flex items-center justify-end gap-1">
                                 <span>التفاصيل الكاملة</span>
                                 <ChevronLeft className="w-3.5 h-3.5" />
                               </span>
@@ -1050,7 +1046,7 @@ export default function VerificationPage() {
                       <Button
                         onClick={() => setVisibleTimelineCount((prev) => prev + 10)}
                         variant="outline"
-                        className="border-slate-300 text-slate-700 font-bold rounded-xl px-8"
+                        className="rassco-btn-secondary font-bold rounded-xl px-8"
                       >
                         عرض باقي الأحداث ({filteredTimeline.length - visibleTimelineCount} متبقية)
                       </Button>
@@ -1058,12 +1054,12 @@ export default function VerificationPage() {
                   )}
                 </CardContent>
 
-                <CardFooter className="bg-slate-50 border-t border-slate-200 p-6 flex flex-col sm:flex-row gap-3">
+                <CardFooter className="rassco-card-header border-t p-6 flex flex-col sm:flex-row gap-3">
                   {trackingData.asset.status === "RECEIVED_BY_TECHNICIAN" ? (
                     <Button
                       onClick={() => updateStatusMutation.mutate({ status: "DELIVERED" })}
                       disabled={updateStatusMutation.isPending}
-                      className="flex-1 h-12 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-extrabold text-base rounded-xl shadow-md"
+                      className="flex-1 h-12 rassco-btn-primary font-extrabold text-base rounded-xl shadow-md"
                     >
                       تغيير الحالة إلى: اعتماد تسليم الجهاز للعميل وإغلاق الطلب
                     </Button>
@@ -1071,7 +1067,7 @@ export default function VerificationPage() {
                     <Button
                       onClick={() => updateStatusMutation.mutate({ status: "RECEIVED_BY_TECHNICIAN" })}
                       disabled={updateStatusMutation.isPending}
-                      className="flex-1 h-12 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-base rounded-xl shadow-md"
+                      className="flex-1 h-12 rassco-btn-secondary font-extrabold text-base rounded-xl shadow-md"
                     >
                       تغيير الحالة إلى: إرجاع لعهدة الفني النشطة
                     </Button>

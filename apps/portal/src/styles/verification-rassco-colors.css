@@ -1,0 +1,242 @@
+/**
+ * RASSCO Enterprise Design Tokens - Serial Verification Portal Page Styles
+ * Scoped strictly under .verification-page-wrapper to prevent affecting other pages.
+ */
+
+.verification-page-wrapper {
+  /* RASSCO Identity Tokens */
+  --rassco-primary: #00A99D;
+  --rassco-primary-hover: #009688;
+  --rassco-primary-light: #DDF8F5;
+  --rassco-primary-border: #7ADBD2;
+
+  --rassco-dark-navy: #0F172A;
+  --rassco-dark-card: #162033;
+
+  --rassco-background: #F6F9FC;
+  --rassco-surface: #FFFFFF;
+  --rassco-sub-surface: #F8FAFC;
+  --rassco-border: #E5EDF3;
+
+  --rassco-text-primary: #0F172A;
+  --rassco-text-secondary: #64748B;
+
+  --rassco-success: #10B981;
+  --rassco-warning: #F59E0B;
+  --rassco-danger: #EF4444;
+  --rassco-info: #0EA5E9;
+
+  background-color: var(--rassco-background);
+  color: var(--rassco-text-primary);
+  min-height: 100vh;
+}
+
+/* Structural Surfaces */
+.verification-page-wrapper .rassco-bg-page {
+  background-color: var(--rassco-background) !important;
+}
+
+.verification-page-wrapper .rassco-card-surface {
+  background-color: var(--rassco-surface) !important;
+  border-color: var(--rassco-border) !important;
+  color: var(--rassco-text-primary) !important;
+}
+
+.verification-page-wrapper .rassco-card-header {
+  background-color: var(--rassco-sub-surface) !important;
+  border-bottom-color: var(--rassco-border) !important;
+}
+
+.verification-page-wrapper .rassco-sub-surface {
+  background-color: var(--rassco-sub-surface) !important;
+  border-color: var(--rassco-border) !important;
+}
+
+/* Typography & Colors */
+.verification-page-wrapper .rassco-text-main {
+  color: var(--rassco-text-primary) !important;
+}
+
+.verification-page-wrapper .rassco-text-muted {
+  color: var(--rassco-text-secondary) !important;
+}
+
+.verification-page-wrapper .rassco-icon-brand {
+  color: var(--rassco-primary) !important;
+}
+
+.verification-page-wrapper .rassco-text-brand {
+  color: var(--rassco-primary-hover) !important;
+}
+
+.verification-page-wrapper .rassco-border-default {
+  border-color: var(--rassco-border) !important;
+}
+
+.verification-page-wrapper .rassco-border-brand {
+  border-color: var(--rassco-primary-border) !important;
+}
+
+/* Buttons */
+.verification-page-wrapper .rassco-btn-primary {
+  background-color: var(--rassco-primary) !important;
+  color: #FFFFFF !important;
+  border: none !important;
+}
+
+.verification-page-wrapper .rassco-btn-primary:hover {
+  background-color: var(--rassco-primary-hover) !important;
+}
+
+.verification-page-wrapper .rassco-btn-secondary {
+  background-color: var(--rassco-surface) !important;
+  border: 1px solid var(--rassco-primary-border) !important;
+  color: var(--rassco-primary-hover) !important;
+}
+
+.verification-page-wrapper .rassco-btn-secondary:hover {
+  background-color: var(--rassco-primary-light) !important;
+  border-color: var(--rassco-primary-border) !important;
+  color: var(--rassco-primary-hover) !important;
+}
+
+.verification-page-wrapper .rassco-btn-success {
+  background-color: var(--rassco-success) !important;
+  color: #FFFFFF !important;
+  border: none !important;
+}
+
+.verification-page-wrapper .rassco-btn-success:hover {
+  background-color: #059669 !important;
+}
+
+.verification-page-wrapper .rassco-btn-warning {
+  background-color: var(--rassco-warning) !important;
+  color: var(--rassco-text-primary) !important;
+  border: none !important;
+}
+
+.verification-page-wrapper .rassco-btn-warning:hover {
+  background-color: #D97706 !important;
+}
+
+.verification-page-wrapper .rassco-btn-danger {
+  background-color: var(--rassco-danger) !important;
+  color: #FFFFFF !important;
+  border: none !important;
+}
+
+.verification-page-wrapper .rassco-btn-danger:hover {
+  background-color: #DC2626 !important;
+}
+
+/* Input Fields */
+.verification-page-wrapper .rassco-input-field {
+  background-color: var(--rassco-surface) !important;
+  border-color: var(--rassco-border) !important;
+  color: var(--rassco-text-primary) !important;
+}
+
+.verification-page-wrapper .rassco-input-field::placeholder {
+  color: var(--rassco-text-secondary) !important;
+}
+
+.verification-page-wrapper .rassco-input-field:focus,
+.verification-page-wrapper .rassco-input-field:focus-visible {
+  border-color: var(--rassco-primary) !important;
+  box-shadow: 0 0 0 3px rgba(0, 169, 157, 0.2) !important;
+  outline: none !important;
+}
+
+/* Quick sample buttons */
+.verification-page-wrapper .rassco-sample-btn {
+  background-color: var(--rassco-sub-surface) !important;
+  border: 1px solid var(--rassco-border) !important;
+  color: var(--rassco-text-primary) !important;
+}
+
+.verification-page-wrapper .rassco-sample-btn:hover {
+  background-color: var(--rassco-primary-light) !important;
+  border-color: var(--rassco-primary-border) !important;
+  color: var(--rassco-primary-hover) !important;
+}
+
+/* Status Badges */
+.verification-page-wrapper .rassco-badge-technician {
+  background-color: var(--rassco-primary-light) !important;
+  color: var(--rassco-primary-hover) !important;
+  border: 1px solid var(--rassco-primary-border) !important;
+}
+
+.verification-page-wrapper .rassco-badge-warehouse {
+  background-color: #E0F2FE !important;
+  color: var(--rassco-text-primary) !important;
+  border: 1px solid var(--rassco-border) !important;
+}
+
+.verification-page-wrapper .rassco-badge-transit {
+  background-color: #FFF7D6 !important;
+  color: var(--rassco-text-primary) !important;
+  border: 1px solid var(--rassco-border) !important;
+}
+
+.verification-page-wrapper .rassco-badge-closed {
+  background-color: #F3F4F6 !important;
+  color: var(--rassco-text-secondary) !important;
+  border: 1px solid var(--rassco-border) !important;
+}
+
+.verification-page-wrapper .rassco-badge-damaged {
+  background-color: #FDECEC !important;
+  color: var(--rassco-danger) !important;
+  border: 1px solid var(--rassco-border) !important;
+}
+
+.verification-page-wrapper .rassco-badge-lost {
+  background-color: #FEE2E2 !important;
+  color: var(--rassco-danger) !important;
+  border: 1px solid var(--rassco-border) !important;
+}
+
+/* Header Banner Badge */
+.verification-page-wrapper .rassco-header-badge {
+  background-color: var(--rassco-primary-light) !important;
+  color: var(--rassco-primary-hover) !important;
+  border: 1px solid var(--rassco-primary-border) !important;
+}
+
+/* Timeline & Controls */
+.verification-page-wrapper .rassco-timeline-line {
+  border-color: var(--rassco-primary-border) !important;
+}
+
+.verification-page-wrapper .rassco-timeline-dot-active {
+  background-color: var(--rassco-primary) !important;
+}
+
+.verification-page-wrapper .rassco-timeline-dot-inactive {
+  background-color: var(--rassco-text-secondary) !important;
+}
+
+.verification-page-wrapper .rassco-timeline-item {
+  background-color: var(--rassco-sub-surface) !important;
+  border-color: var(--rassco-border) !important;
+}
+
+.verification-page-wrapper .rassco-timeline-item:hover {
+  background-color: var(--rassco-primary-light) !important;
+  border-color: var(--rassco-primary-border) !important;
+}
+
+.verification-page-wrapper .rassco-timeline-item-latest {
+  border-color: var(--rassco-primary-border) !important;
+}
+
+.verification-page-wrapper .rassco-filter-btn-active {
+  background-color: var(--rassco-primary) !important;
+  color: #FFFFFF !important;
+}
+
+.verification-page-wrapper .rassco-filter-btn-inactive {
+  color: var(--rassco-text-secondary) !important;
+}
