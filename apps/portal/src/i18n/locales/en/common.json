@@ -47,7 +47,8 @@
     "backup": "Backup Management",
     "item-types": "Item Types Management",
     "ai-engine-settings": "AI Engine Settings",
-    "permissions-center": "Permissions Center"
+    "permissions-center": "Permissions Center",
+    "leads-audit": "Keys & Accounts Log"
   },
   "titles": {
     "home": "Home",
@@ -104,6 +105,7 @@
   },
   "permissions_center": {
     "subtitle": "Manage supervisor permissions per page and action, layered on top of the role's default template and within its hard ceiling",
+    "summary_heading": "Permissions summary",
     "scope_note": "Current scope: Admin can manage permissions for Supervisor-role employees only. Other roles remain governed by their existing path and are not shown here.",
     "search_placeholder": "Search a supervisor by name, username, or email",
     "supervisors_heading": "Supervisors",
@@ -122,8 +124,72 @@
     "inactive_account_warning": "This supervisor's account is currently inactive — no permission below will take effect, regardless of its state here, until the account is reactivated.",
     "no_region_warning": "This supervisor has no assigned region — region-scoped permissions will not actually take effect until a region is assigned from the User Management page.",
     "tabs": {
-      "permissions": "Permissions",
+      "access": "Access & Permissions",
+      "page_access": "Page Access",
+      "actions": "Action Permissions",
+      "scope": "Data Scope",
       "audit": "Change History"
+    },
+    "filters": {
+      "search_placeholder": "Search by page name",
+      "all": "All",
+      "allowed": "Allowed only",
+      "denied": "Denied only",
+      "overridden": "Manually overridden",
+      "locked": "Locked"
+    },
+    "hero": {
+      "region_label": "Assigned Region",
+      "default_scope_caption": "Default operational scope: Region-level",
+      "hard_ceiling_label": "Hard Ceiling",
+      "selected_badge": "Selected Supervisor",
+      "change_supervisor": "Change supervisor",
+      "role_label": "Role"
+    },
+    "summary": {
+      "default_label": "Default Permissions",
+      "granted_label": "Granted",
+      "revoked_label": "Revoked",
+      "effective_label": "Effective"
+    },
+    "page_access": {
+      "subtitle": "Whether this supervisor can access each page at all, based on its view permission",
+      "access_available": "Accessible",
+      "access_none": "No access",
+      "effective_count": "{allowed} of {total} permissions effective",
+      "governed_heading": "Pages governed by this Permissions Center",
+      "ungoverned_heading": "Pages needing permission-engine linkage",
+      "ungoverned_subtitle": "Real StockPro pages this Supervisor's role can see, that have not yet been linked to the Permission Engine at the page/action level. Shown for transparency, never hidden.",
+      "ungoverned_badge": "Not yet linked",
+      "ungoverned_reason": "This page has not been linked to the Permission Engine yet",
+      "admin_only_heading": "System-administrator only",
+      "admin_only_subtitle": "Pages isolated by an independent, server-side security policy — not grantable from any permissions panel, including this one.",
+      "admin_only_badge": "Not grantable",
+      "admin_only_reason": "Reserved for the system administrator",
+      "no_matches": "No pages match this search/filter",
+      "override_badge": "Manual override",
+      "expand_hint": "Show details",
+      "collapse_hint": "Hide details",
+      "actions_available": "{count} available action(s)",
+      "region_filter_all": "All regions"
+    },
+    "extra_pages": {
+      "technician_details": "Technician Profile & Inventory"
+    },
+    "scope_tab": {
+      "subtitle": "The data boundary this supervisor's permissions operate within",
+      "role_label": "Role",
+      "hard_ceiling_label": "Hard Role Ceiling",
+      "assigned_region_label": "Assigned Region",
+      "effective_scope_label": "Applied Effective Scope",
+      "effective_scope_none": "No effective permission right now",
+      "no_global_note": "Supervisor never receives automatic Global access — every grant stays bounded to their assigned region."
+    },
+    "pages_desc": {
+      "courier_requests": "Delivery/courier request records",
+      "warehouse_inventory": "Warehouse stock levels",
+      "warehouse_transfers": "Stock transfer operations between warehouses",
+      "reports_operational": "Operational reporting"
     },
     "table": {
       "page": "Page",
@@ -150,6 +216,12 @@
       "grant_description": "\"{permission}\" will be explicitly granted to this supervisor, regardless of their role's default template.",
       "revoke_description": "\"{permission}\" will be explicitly revoked from this supervisor, even if it is granted by default for their role.",
       "reset_description": "Any recorded override for \"{permission}\" will be removed, falling back to the Supervisor role's default template.",
+      "field_supervisor": "Supervisor",
+      "field_page": "Page",
+      "field_action": "Action",
+      "field_current_state": "Current state",
+      "field_requested_state": "Requested state",
+      "field_scope": "Data scope",
       "reason_label": "Reason for this change (optional, saved to the audit log)",
       "reason_placeholder": "e.g. covering leave, temporary added responsibility...",
       "confirm": "Confirm",

@@ -21,7 +21,11 @@ describe("OPS-PERM-S1-F5 — Permissions Center shell smoke", () => {
           createRoleFixture("supervisor", { id: "sup-1", fullName: "Supervisor One", username: "sup.one" }),
           createRoleFixture("admin", { id: "admin-1", fullName: "Admin One", username: "admin.one" }),
         ])
-      )
+      ),
+      // Real /api/regions returns a raw array (see employee-detailed-profile-template.tsx's
+      // identical query) — override the generic {success,data} MSW fallback so the page's own
+      // region-name resolution never sees a mismatched envelope shape.
+      http.get("/api/regions", () => HttpResponse.json([]))
     );
 
     const { container } = renderWithProviders(<PermissionsCenterPage />, { authOverrides: { role: "admin" } });
@@ -33,7 +37,8 @@ describe("OPS-PERM-S1-F5 — Permissions Center shell smoke", () => {
     mockApiServer.use(
       http.get("/api/users", () =>
         HttpResponse.json([createRoleFixture("supervisor", { id: "sup-1", fullName: "Supervisor One", username: "sup.one" })])
-      )
+      ),
+      http.get("/api/regions", () => HttpResponse.json([]))
     );
 
     renderWithProviders(<PermissionsCenterPage />, { authOverrides: { role: "admin" } });
