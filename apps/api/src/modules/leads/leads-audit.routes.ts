@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { requireAuth } from "@core/middlewares/auth.middleware";
+import { requireAuth, requireAdmin } from "@core/middlewares/auth.middleware";
 import { pool } from "@core/config/db";
 import { logger } from "@server/utils/logger";
 
@@ -136,8 +136,14 @@ export function registerLeadDiscoveryAuditRoutes(app: Express): void {
   /**
    * POST /api/leads/discovery/toggle-user-access
    * Admin Endpoint: Enables or blocks a user account from performing lead discovery / API scraping.
+   *
+   * OPS-SEC-HOTFIX-LEADS-AUDIT-ADMIN-AUTHORIZATION: this mutates another
+   * account's access and MUST be Admin-only. requireAdmin uses the
+   * canonical role check (req.user.role === ROLES.ADMIN via
+   * @core/middlewares/auth.middleware), never the legacy users.permissions
+   * authority.
    */
-  app.post("/api/leads/discovery/toggle-user-access", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/leads/discovery/toggle-user-access", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { userName, userId, allow } = req.body || {};
       const target = String(userName || userId || "").trim();
@@ -173,8 +179,14 @@ export function registerLeadDiscoveryAuditRoutes(app: Express): void {
   /**
    * POST /api/leads/discovery/clear-user-leads
    * Admin Endpoint: Deletes all lead discovery activity logs and scraped data associated with a specific user.
+   *
+   * OPS-SEC-HOTFIX-LEADS-AUDIT-ADMIN-AUTHORIZATION: this deletes another
+   * account's audit/lead data (in-memory and system_logs DB rows) and MUST
+   * be Admin-only. requireAdmin uses the canonical role check
+   * (req.user.role === ROLES.ADMIN via @core/middlewares/auth.middleware),
+   * never the legacy users.permissions authority.
    */
-  app.post("/api/leads/discovery/clear-user-leads", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/leads/discovery/clear-user-leads", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { userName, userId } = req.body || {};
       const targetName = String(userName || "").trim();
