@@ -96,10 +96,10 @@ export function SupervisorDirectory({
 
   return (
     <div className="rounded-2xl bg-white shadow-sm overflow-hidden">
-      <div className="p-3 space-y-2 border-b border-rassco-border/70">
+      <div className="p-4 space-y-3 border-b border-rassco-border/70">
         <div className="flex items-center justify-between px-0.5">
-          <span className="text-sm font-bold text-rassco-text">{t("permissions_center.supervisors_heading")}</span>
-          <span className="text-xs font-semibold text-rassco bg-rassco/10 rounded-full px-2 py-0.5">
+          <span className="text-base font-bold text-rassco-text">{t("permissions_center.supervisors_heading")}</span>
+          <span className="text-sm font-bold text-rassco bg-rassco/10 rounded-full px-2.5 py-0.5 min-w-[2rem] text-center">
             {filteredSupervisors.length}
           </span>
         </div>
@@ -109,7 +109,7 @@ export function SupervisorDirectory({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder={t("permissions_center.search_placeholder")}
-            className="ps-9 h-9"
+            className="ps-9 h-10 text-sm"
             data-testid="input-search-supervisors"
           />
         </div>
@@ -118,7 +118,7 @@ export function SupervisorDirectory({
             <select
               value={regionFilter}
               onChange={(e) => setRegionFilter(e.target.value)}
-              className="w-full h-9 appearance-none rounded-full border border-rassco-border/70 bg-white ps-3 pe-8 text-xs font-semibold text-rassco-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="w-full h-10 appearance-none rounded-full border border-rassco-border/70 bg-white ps-3.5 pe-8 text-sm font-semibold text-rassco-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               data-testid="select-region-filter"
             >
               <option value="all">{t("permissions_center.page_access.region_filter_all")}</option>
@@ -128,7 +128,7 @@ export function SupervisorDirectory({
                 </option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronDown className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           </div>
         )}
       </div>
@@ -152,32 +152,34 @@ export function SupervisorDirectory({
             : t("permissions_center.no_supervisors")}
         </p>
       ) : (
-        <ul className="max-h-[min(70vh,640px)] overflow-y-auto py-1">
+        <ul className="max-h-[min(70vh,720px)] overflow-y-auto py-1.5">
           {filteredSupervisors.map((supervisor) => {
             const active = supervisor.id === selectedUserId;
             const region = supervisor.regionId ? regionsById.get(supervisor.regionId) : undefined;
             return (
-              <li key={supervisor.id} className="px-1.5">
+              <li key={supervisor.id} className="px-2">
                 <button
                   type="button"
                   onClick={() => onSelect(supervisor.id)}
                   data-testid={`button-select-supervisor-${supervisor.id}`}
                   aria-current={active}
-                  className={`w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-start transition-colors border-s-2 ${
-                    active ? "bg-rassco/10 border-s-rassco" : "border-s-transparent hover:bg-muted/50"
+                  className={`w-full flex items-center gap-3 rounded-xl px-3 py-3 text-start transition-colors border-s-[3px] ${
+                    active
+                      ? "bg-rassco/10 border-s-rassco ring-1 ring-inset ring-rassco/20"
+                      : "border-s-transparent hover:bg-muted/50"
                   }`}
                 >
                   <span className="relative shrink-0">
-                    <SupervisorAvatar user={supervisor} size={36} />
+                    <SupervisorAvatar user={supervisor} size={44} />
                     <span
-                      className={`absolute -bottom-0.5 -end-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white ${
+                      className={`absolute -bottom-0.5 -end-0.5 h-3 w-3 rounded-full ring-2 ring-white ${
                         supervisor.isActive ? "bg-green-500" : "bg-rassco-gray/60"
                       }`}
                     />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-rassco-text truncate">{supervisor.fullName}</span>
-                    <span className="block text-[11px] text-muted-foreground truncate">
+                    <span className="block text-[15px] font-semibold text-rassco-text truncate">{supervisor.fullName}</span>
+                    <span className="block text-xs text-muted-foreground truncate mt-0.5">
                       {getRoleLabel(supervisor.role)}
                       {region ? ` · ${region.name}` : ""}
                     </span>

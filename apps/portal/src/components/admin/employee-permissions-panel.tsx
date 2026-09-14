@@ -37,6 +37,7 @@ import {
   ShieldCheck,
   ShieldQuestion,
   ShieldX,
+  SlidersHorizontal,
   Truck,
   UserCog,
   type LucideIcon,
@@ -296,11 +297,11 @@ export function EmployeePermissionsPanel({ employee, usersById, regionsById, onC
           <PermissionsToolbar t={t} searchTerm={searchTerm} onSearchChange={setSearchTerm} filterMode={filterMode} onFilterChange={setFilterMode} />
 
           {filteredGovernedPages.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {filterMode === "all" && (
-                <p className="text-xs font-semibold text-muted-foreground px-1">{t("permissions_center.page_access.governed_heading")}</p>
+                <p className="text-sm font-bold text-rassco-text px-1">{t("permissions_center.page_access.governed_heading")}</p>
               )}
-              <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 min-[1800px]:grid-cols-4 gap-4">
                 {filteredGovernedPages.map(([page, rows]) => (
                   <GovernedPageCard
                     key={page}
@@ -455,24 +456,24 @@ function ContextStrip({
     firstAllowed && firstAllowed.effective.allowed ? dataScopeLabel(t, firstAllowed.effective.scope) : "—";
 
   return (
-    <div className="rounded-2xl bg-white shadow-sm px-5 py-4">
-      <div className="flex flex-wrap items-center gap-4">
+    <div className="rounded-2xl bg-white shadow-sm px-6 py-5">
+      <div className="flex flex-wrap items-center gap-6">
         <SupervisorIdentity employee={employee} snapshot={snapshot} onChangeSupervisor={onChangeSupervisor} />
 
-        <span className="h-9 w-px bg-rassco-border hidden md:block" />
-        <ContextField label={t("permissions_center.hero.role_label")} value={getRoleLabel(employee.role)} icon={<UserCog className="h-3.5 w-3.5" />} />
-        <span className="h-9 w-px bg-rassco-border hidden md:block" />
+        <span className="h-12 w-px bg-rassco-border hidden md:block" />
+        <ContextField label={t("permissions_center.hero.role_label")} value={getRoleLabel(employee.role)} icon={<UserCog className="h-4 w-4" />} />
+        <span className="h-12 w-px bg-rassco-border hidden md:block" />
         <ContextField
           label={t("permissions_center.hero.region_label")}
           value={regionName || (snapshot.regionId ? snapshot.regionId : t("permissions_center.no_region"))}
-          icon={<MapPin className="h-3.5 w-3.5" />}
+          icon={<MapPin className="h-4 w-4" />}
           warn={!snapshot.regionId}
         />
-        <span className="h-9 w-px bg-rassco-border hidden md:block" />
+        <span className="h-12 w-px bg-rassco-border hidden md:block" />
         <ContextField
           label={t("permissions_center.scope_tab.effective_scope_label")}
           value={effectiveScopeLabel}
-          icon={<Boxes className="h-3.5 w-3.5" />}
+          icon={<Boxes className="h-4 w-4" />}
         />
 
         <div className="ms-auto">
@@ -481,14 +482,14 @@ function ContextStrip({
       </div>
 
       {!snapshot.isActive && (
-        <div className="flex items-start gap-2 rounded-xl bg-destructive/5 p-2.5 mt-3 text-xs text-destructive">
-          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+        <div className="flex items-start gap-2 rounded-xl bg-destructive/5 p-3 mt-4 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
           <span>{t("permissions_center.inactive_account_warning")}</span>
         </div>
       )}
       {!snapshot.regionId && (
-        <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-2.5 mt-3 text-xs text-amber-800">
-          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+        <div className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 mt-4 text-sm text-amber-800">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
           <span>{t("permissions_center.no_region_warning")}</span>
         </div>
       )}
@@ -521,22 +522,22 @@ function SupervisorIdentity({
   return (
     <div className="flex items-center gap-4">
       {employee.profileImage ? (
-        <img src={employee.profileImage} alt="" className="h-12 w-12 rounded-2xl object-cover shrink-0" />
+        <img src={employee.profileImage} alt="" className="h-16 w-16 rounded-2xl object-cover shrink-0" />
       ) : (
-        <div className="h-12 w-12 rounded-2xl bg-rassco/15 text-rassco flex items-center justify-center text-base font-bold shrink-0">
+        <div className="h-16 w-16 rounded-2xl bg-rassco/15 text-rassco flex items-center justify-center text-xl font-bold shrink-0">
           {init}
         </div>
       )}
-      <div className="min-w-[10rem]">
+      <div className="min-w-[11rem]">
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-bold text-rassco-text leading-tight">{employee.fullName}</h2>
+          <h2 className="text-xl font-bold text-rassco-text leading-tight">{employee.fullName}</h2>
           <span
-            className={`h-2 w-2 rounded-full shrink-0 ${snapshot.isActive ? "bg-green-500" : "bg-rassco-gray"}`}
+            className={`h-2.5 w-2.5 rounded-full shrink-0 ${snapshot.isActive ? "bg-green-500" : "bg-rassco-gray"}`}
             title={snapshot.isActive ? t("permissions_center.active_badge") : t("permissions_center.inactive_badge")}
           />
         </div>
-        <p className="text-xs text-muted-foreground">{t("permissions_center.hero.selected_badge")}</p>
-        <button type="button" onClick={onChangeSupervisor} className="text-xs font-semibold text-rassco hover:underline mt-0.5">
+        <p className="text-sm text-muted-foreground mt-0.5">{t("permissions_center.hero.selected_badge")}</p>
+        <button type="button" onClick={onChangeSupervisor} className="text-sm font-semibold text-rassco hover:underline mt-1">
           {t("permissions_center.hero.change_supervisor")}
         </button>
       </div>
@@ -546,12 +547,12 @@ function SupervisorIdentity({
 
 function ContextField({ label, value, icon, warn }: { label: string; value: string; icon: ReactNode; warn?: boolean }) {
   return (
-    <div className="min-w-[7rem]">
-      <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+    <div className="min-w-[8.5rem]">
+      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
         {icon}
         {label}
       </p>
-      <p className={`text-sm font-semibold truncate ${warn ? "text-amber-700" : "text-rassco-text"}`}>{value}</p>
+      <p className={`text-base font-bold truncate mt-0.5 ${warn ? "text-amber-700" : "text-rassco-text"}`}>{value}</p>
     </div>
   );
 }
@@ -575,16 +576,19 @@ function PermissionSummary({
   ];
 
   return (
-    <div className="flex flex-col items-end gap-1">
-      <span className="text-[11px] font-semibold text-muted-foreground">{t("permissions_center.summary_heading")}</span>
-      <div className="flex items-center gap-1.5">
+    <div className="flex flex-col items-end gap-2">
+      <span className="text-xs font-bold text-muted-foreground">{t("permissions_center.summary_heading")}</span>
+      <div className="flex items-center gap-2.5">
         {kpis.map((k) => (
-          <div key={k.label} className="rounded-xl border border-rassco-border/60 px-2.5 py-1 text-center min-w-[56px] shrink-0">
-            <div className="flex items-center justify-center gap-1">
-              <k.icon className={`h-3 w-3 ${k.tone}`} />
-              <span className={`text-base font-bold ${k.tone}`}>{k.value}</span>
+          <div
+            key={k.label}
+            className="rounded-2xl border border-rassco-border/60 bg-muted/20 px-4 py-2.5 text-center min-w-[92px] shrink-0"
+          >
+            <div className="flex items-center justify-center gap-1.5">
+              <k.icon className={`h-4 w-4 ${k.tone}`} />
+              <span className={`text-2xl font-extrabold leading-none ${k.tone}`}>{k.value}</span>
             </div>
-            <p className="text-[9px] text-muted-foreground leading-tight mt-0.5 whitespace-nowrap">{k.label}</p>
+            <p className="text-xs font-medium text-muted-foreground leading-tight mt-1.5 whitespace-nowrap">{k.label}</p>
           </div>
         ))}
       </div>
@@ -620,11 +624,11 @@ function PermissionsToolbar({
   ];
   return (
     <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-      <div className="relative sm:w-56 shrink-0">
+      <div className="relative sm:w-60 shrink-0">
         <select
           value={filterMode}
           onChange={(e) => onFilterChange(e.target.value as PageFilterMode)}
-          className="w-full h-9 appearance-none rounded-full border border-rassco-border/70 bg-white ps-3 pe-8 text-xs font-semibold text-rassco-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="w-full h-11 appearance-none rounded-full border border-rassco-border/70 bg-white ps-4 pe-9 text-sm font-semibold text-rassco-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           data-testid="select-status-filter"
         >
           {modes.map((m) => (
@@ -633,15 +637,15 @@ function PermissionsToolbar({
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+        <ChevronDown className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
       </div>
-      <div className="relative sm:w-64">
-        <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <div className="relative sm:w-72">
+        <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder={t("permissions_center.filters.search_placeholder")}
-          className="ps-9 h-9"
+          className="ps-10 h-11 text-sm"
           data-testid="input-search-pages"
         />
       </div>
@@ -675,6 +679,10 @@ function GovernedPageCard({
   onReset: (row: EmployeePermissionRow) => void;
 }) {
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
+  // Open by default so every existing capability chip stays immediately visible/testable — the
+  // "إدارة الصلاحيات" control is a real, working collapse toggle (an Admin scanning many cards can
+  // fold the ones they're not touching), never a hidden gate the Admin must discover first.
+  const [managing, setManaging] = useState(true);
   const Icon = pageIcon(page);
   const effectiveCount = rows.filter((r) => r.effective.allowed).length;
   const deniedCount = rows.length - effectiveCount;
@@ -682,32 +690,47 @@ function GovernedPageCard({
   const hasOverride = rows.some((r) => r.assigned !== null);
   const description = pageDescription(t, page);
   const selectedRow = selectedAction ? rows.find((r) => r.action === selectedAction) ?? null : null;
+  // The catalog's own "view" action IS this page's real, canonical page-level access permission
+  // (permission-catalog.ts lists "view" for every governed page) — surfaced as its own always-
+  // visible badge, never a separately invented page-access concept.
+  const viewRow = rows.find((r) => r.action === "view") ?? null;
 
   return (
-    <div className="rounded-2xl bg-white shadow-sm p-4 flex flex-col gap-3">
-      <div className="flex items-start gap-3">
-        <span className="h-10 w-10 rounded-xl bg-rassco/10 text-rassco flex items-center justify-center shrink-0">
-          <Icon className="h-5 w-5" />
+    <div className="rounded-2xl bg-white shadow-sm p-5 flex flex-col gap-4 border border-rassco-border/40">
+      <div className="flex items-start gap-3.5">
+        <span className="h-12 w-12 rounded-2xl bg-rassco/10 text-rassco flex items-center justify-center shrink-0">
+          <Icon className="h-6 w-6" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-sm font-bold text-rassco-text">{pageLabel(t, page)}</h3>
+            <h3 className="text-base font-bold text-rassco-text">{pageLabel(t, page)}</h3>
             {hasOverride && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
                 {t("permissions_center.page_access.override_badge")}
               </span>
             )}
           </div>
-          {description ? <p className="text-xs text-muted-foreground mt-0.5">{description}</p> : null}
+          {description ? <p className="text-sm text-muted-foreground mt-1">{description}</p> : null}
         </div>
-        <span className="text-[11px] text-muted-foreground shrink-0">{scopeLabel}</span>
+        <span className="text-xs font-medium text-muted-foreground shrink-0">{scopeLabel}</span>
       </div>
 
-      <PermissionChipRow
-        rows={rows}
-        selectedAction={selectedAction}
-        onSelect={(action) => setSelectedAction((prev) => (prev === action ? null : action))}
-      />
+      {viewRow && (
+        <div className="flex items-center justify-between rounded-xl bg-muted/30 px-3.5 py-2.5">
+          <span className="text-xs font-bold text-muted-foreground">{t("permissions_center.page_access.page_access_label")}</span>
+          {viewRow.effective.allowed ? (
+            <span className="inline-flex items-center gap-1.5 text-sm font-bold text-green-700">
+              <ShieldCheck className="h-4 w-4 shrink-0" />
+              {t("permissions_center.effective_allowed")}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-sm font-bold text-rose-700">
+              <ShieldX className="h-4 w-4 shrink-0" />
+              {t("permissions_center.effective_denied")}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <MiniStat icon={ShieldQuestion} tone="text-rassco-text" value={defaultCount} label={t("permissions_center.toggle.default")} />
@@ -715,14 +738,38 @@ function GovernedPageCard({
         <MiniStat icon={ShieldCheck} tone="text-green-600" value={effectiveCount} label={t("permissions_center.effective_allowed")} />
       </div>
 
-      {selectedRow && (
-        <SelectedActionDetail
-          row={selectedRow}
-          disabled={disabled}
-          onGrant={() => onGrant(selectedRow)}
-          onRevoke={() => onRevoke(selectedRow)}
-          onReset={() => onReset(selectedRow)}
-        />
+      <button
+        type="button"
+        onClick={() => setManaging((v) => !v)}
+        aria-expanded={managing}
+        data-testid={`button-manage-${page}`}
+        className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-rassco text-white text-sm font-bold py-2.5 hover:bg-rassco/90 transition-colors"
+      >
+        <SlidersHorizontal className="h-4 w-4" />
+        {managing ? t("permissions_center.page_access.manage_cta_close") : t("permissions_center.page_access.manage_cta")}
+        <ChevronDown className={`h-4 w-4 transition-transform ${managing ? "rotate-180" : ""}`} />
+      </button>
+
+      {managing && (
+        <div className="space-y-3 pt-3 border-t border-rassco-border/60">
+          <PermissionChipRow
+            rows={rows}
+            selectedAction={selectedAction}
+            onSelect={(action) => setSelectedAction((prev) => (prev === action ? null : action))}
+          />
+
+          {selectedRow ? (
+            <SelectedActionDetail
+              row={selectedRow}
+              disabled={disabled}
+              onGrant={() => onGrant(selectedRow)}
+              onRevoke={() => onRevoke(selectedRow)}
+              onReset={() => onReset(selectedRow)}
+            />
+          ) : (
+            <p className="text-xs text-muted-foreground px-1">{t("permissions_center.page_access.manage_prompt")}</p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -743,7 +790,7 @@ function PermissionChipRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-2">
       {rows.map((row) => {
         const active = selectedAction === row.action;
         return (
@@ -753,11 +800,11 @@ function PermissionChipRow({
             onClick={() => onSelect(row.action)}
             aria-pressed={active}
             data-testid={`button-select-action-${row.page}-${row.action}`}
-            className={`inline-flex items-center gap-1.5 text-[11px] font-medium rounded-full px-2.5 py-1 transition-colors ${
+            className={`inline-flex items-center gap-2 text-sm font-medium rounded-full px-3.5 py-1.5 transition-colors ${
               active ? "bg-rassco/10 text-rassco ring-1 ring-inset ring-rassco/40" : "text-rassco-text bg-muted/60 hover:bg-muted"
             }`}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${row.effective.allowed ? "bg-green-500" : "bg-rose-400"}`} />
+            <span className={`h-2 w-2 rounded-full ${row.effective.allowed ? "bg-green-500" : "bg-rose-400"}`} />
             {actionLabel(t, row.action)}
           </button>
         );
@@ -768,12 +815,12 @@ function PermissionChipRow({
 
 function MiniStat({ icon: Icon, tone, value, label }: { icon: LucideIcon; tone: string; value: number; label: string }) {
   return (
-    <div className="flex-1 rounded-xl bg-muted/40 py-1.5 text-center">
-      <div className="flex items-center justify-center gap-1">
-        <Icon className={`h-3 w-3 ${tone}`} />
-        <span className={`text-sm font-bold ${tone}`}>{value}</span>
+    <div className="flex-1 rounded-xl bg-muted/40 py-2.5 text-center">
+      <div className="flex items-center justify-center gap-1.5">
+        <Icon className={`h-4 w-4 ${tone}`} />
+        <span className={`text-base font-bold ${tone}`}>{value}</span>
       </div>
-      <p className="text-[10px] text-muted-foreground">{label}</p>
+      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
     </div>
   );
 }
@@ -804,37 +851,56 @@ function SelectedActionDetail({
   return (
     <div
       data-testid={`row-permission-${row.page}-${row.action}`}
-      className="rounded-xl bg-muted/25 px-3.5 py-3 space-y-2.5"
+      className="rounded-xl bg-muted/25 px-4 py-3.5 space-y-3"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-rassco-text">{actionLabel(t, row.action)}</p>
-        {row.effective.allowed ? (
-          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700">
-            <ShieldCheck className="h-4 w-4 shrink-0" />
-            {t("permissions_center.effective_allowed")}
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-rose-700">
-            <ShieldX className="h-4 w-4 shrink-0" />
-            {t("permissions_center.effective_denied")}
-          </span>
-        )}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs text-muted-foreground">{t("permissions_center.detail.permission_label")}</p>
+          <p className="text-base font-semibold text-rassco-text mt-0.5">{actionLabel(t, row.action)}</p>
+        </div>
+        <div className="text-end">
+          <p className="text-xs text-muted-foreground">{t("permissions_center.detail.effective_state_label")}</p>
+          {row.effective.allowed ? (
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700 mt-0.5">
+              <ShieldCheck className="h-4 w-4 shrink-0" />
+              {t("permissions_center.effective_allowed")}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-rose-700 mt-0.5">
+              <ShieldX className="h-4 w-4 shrink-0" />
+              {t("permissions_center.effective_denied")}
+            </span>
+          )}
+        </div>
       </div>
 
-      <p className="text-[11px] text-muted-foreground">
-        {row.effective.allowed
-          ? `${grantSourceLabel(t, row.effective.reason)} · ${dataScopeLabel(t, row.effective.scope)}`
-          : denyReasonLabel(t, row.effective.reason)}
-      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs text-muted-foreground">{t("permissions_center.detail.source_label")}</p>
+          <p className="text-sm font-medium text-rassco-text mt-0.5">
+            {row.effective.allowed ? grantSourceLabel(t, row.effective.reason) : denyReasonLabel(t, row.effective.reason)}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{t("permissions_center.detail.scope_label")}</p>
+          <p className="text-sm font-medium text-rassco-text mt-0.5">
+            {row.effective.allowed ? dataScopeLabel(t, row.effective.scope) : "—"}
+          </p>
+        </div>
+      </div>
 
       {editable ? (
-        <div className="flex flex-wrap gap-1.5 pt-1 border-t border-rassco-border/60">
-          {row.assigned !== "grant" && (
+        <div className="flex flex-wrap gap-2 pt-2 border-t border-rassco-border/60">
+          {/* State-aware actions only — an already-effective decision never offers itself again as a
+              no-op: an inherited/default ALLOW only offers Revoke, an inherited/default DENY only
+              offers Grant. An explicit override (assigned grant/revoke) always offers its opposite
+              plus Reset. */}
+          {row.assigned !== "grant" && !(row.assigned === null && row.effective.allowed) && (
             <ActionButton tone="positive" disabled={disabled} onClick={onGrant}>
               {t("permissions_center.toggle.grant")}
             </ActionButton>
           )}
-          {row.assigned !== "revoke" && (
+          {row.assigned !== "revoke" && !(row.assigned === null && !row.effective.allowed) && (
             <ActionButton tone="negative" disabled={disabled} onClick={onRevoke}>
               {t("permissions_center.toggle.revoke")}
             </ActionButton>
@@ -849,8 +915,8 @@ function SelectedActionDetail({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground pt-1 border-t border-rassco-border/60">
-                <Lock className="h-3.5 w-3.5" />
+              <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground pt-2 border-t border-rassco-border/60">
+                <Lock className="h-4 w-4" />
                 {t("permissions_center.not_available_for_role")}
               </span>
             </TooltipTrigger>
@@ -890,7 +956,7 @@ function ActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${toneClass}`}
+      className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${toneClass}`}
     >
       {children}
     </button>
@@ -924,23 +990,32 @@ function LockedSection({
   const reasonKey = variant === "admin-only" ? "admin_only_reason" : "ungoverned_reason";
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center gap-2 px-1">
-        <h3 className="text-xs font-semibold text-rassco-text">{heading}</h3>
-        <span className="text-[11px] font-semibold text-muted-foreground bg-muted rounded-full px-1.5">{pages.length}</span>
+        <h3 className="text-sm font-bold text-rassco-text">{heading}</h3>
+        <span className="text-xs font-bold text-muted-foreground bg-muted rounded-full px-2 py-0.5">{pages.length}</span>
       </div>
-      <p className="text-[11px] text-muted-foreground px-1 -mt-1">{subtitle}</p>
+      <p className="text-xs text-muted-foreground px-1 -mt-1.5">{subtitle}</p>
       {variant === "ungoverned" ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {pages.map((page) => (
-            <div key={page.id} className="rounded-2xl bg-muted/30 p-3 space-y-1.5">
-              <span className="inline-flex h-8 w-8 rounded-lg bg-white text-rassco-gray items-center justify-center shadow-sm">
-                <page.icon className="h-4 w-4" />
-              </span>
-              <p className="text-xs font-semibold text-rassco-text truncate">{t(page.labelKey)}</p>
-              <p className="text-[10px] text-muted-foreground">{t(`permissions_center.page_access.${reasonKey}`)}</p>
+            <div
+              key={page.id}
+              className="rounded-2xl bg-white border border-rassco-border/70 p-4 space-y-2.5 hover:border-rassco/30 hover:shadow-sm transition-all"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="inline-flex h-11 w-11 rounded-xl bg-muted/60 text-rassco-gray items-center justify-center shrink-0">
+                  <page.icon className="h-5 w-5" />
+                </span>
+                <Lock className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0 mt-1" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-rassco-text truncate">{t(page.labelKey)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{t(`permissions_center.page_access.${reasonKey}`)}</p>
+                <p className="text-xs text-muted-foreground/80">{t("permissions_center.page_access.ungoverned_locked_note")}</p>
+              </div>
               {page.href ? (
-                <p className="text-[9px] text-muted-foreground/70 truncate" dir="ltr">
+                <p className="text-[11px] text-muted-foreground/70 truncate pt-1 border-t border-rassco-border/50" dir="ltr">
                   {page.href}
                 </p>
               ) : null}
@@ -948,22 +1023,21 @@ function LockedSection({
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {pages.map((page) => (
-            <div key={page.id} className="flex items-center gap-3 rounded-2xl bg-rose-50/70 p-3.5">
-              <span className="relative inline-flex h-9 w-9 rounded-xl bg-white text-rose-500 items-center justify-center shadow-sm shrink-0">
-                <page.icon className="h-4 w-4" />
-                <span className="absolute -bottom-1 -end-1 h-4 w-4 rounded-full bg-rose-100 ring-2 ring-white flex items-center justify-center text-rose-500">
-                  <Lock className="h-2.5 w-2.5" />
+            <div key={page.id} className="rounded-2xl bg-rose-50 border border-rose-200/80 p-4 space-y-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <span className="inline-flex h-11 w-11 rounded-xl bg-white text-rose-500 items-center justify-center shadow-sm shrink-0">
+                  <page.icon className="h-5 w-5" />
                 </span>
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-rassco-text truncate">{t(page.labelKey)}</p>
-                <p className="text-[11px] text-rose-700/80">{t(`permissions_center.page_access.${reasonKey}`)}</p>
+                <Badge variant="outline" className="text-xs font-semibold text-rose-700 border-rose-300 bg-white/60 whitespace-nowrap shrink-0">
+                  {t(`permissions_center.page_access.${badgeKey}`)}
+                </Badge>
               </div>
-              <Badge variant="outline" className="text-[11px] text-rose-700 border-rose-200 whitespace-nowrap shrink-0">
-                {t(`permissions_center.page_access.${badgeKey}`)}
-              </Badge>
+              <div>
+                <p className="text-sm font-bold text-rassco-text truncate">{t(page.labelKey)}</p>
+                <p className="text-xs text-rose-700/80 mt-0.5">{t(`permissions_center.page_access.${reasonKey}`)}</p>
+              </div>
             </div>
           ))}
         </div>
@@ -991,35 +1065,35 @@ function DataScopeCard({
       : t("permissions_center.scope_tab.effective_scope_none");
 
   return (
-    <div className="rounded-2xl bg-white shadow-sm p-5 space-y-4">
-      <p className="text-xs text-muted-foreground">{t("permissions_center.scope_tab.subtitle")}</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="rounded-xl bg-muted/40 p-4">
-          <p className="text-[11px] text-muted-foreground">{t("permissions_center.scope_tab.role_label")}</p>
-          <p className="text-lg font-bold text-rassco-text mt-1">{getRoleLabel(snapshot.role)}</p>
+    <div className="rounded-2xl bg-white shadow-sm p-6 space-y-5">
+      <p className="text-sm text-muted-foreground">{t("permissions_center.scope_tab.subtitle")}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-xl bg-muted/40 p-5">
+          <p className="text-xs text-muted-foreground">{t("permissions_center.scope_tab.role_label")}</p>
+          <p className="text-xl font-bold text-rassco-text mt-1.5">{getRoleLabel(snapshot.role)}</p>
         </div>
-        <div className="rounded-xl bg-muted/40 p-4">
-          <p className="text-[11px] text-muted-foreground">{t("permissions_center.scope_tab.hard_ceiling_label")}</p>
-          <p className="text-lg font-bold text-rassco-text mt-1">
+        <div className="rounded-xl bg-muted/40 p-5">
+          <p className="text-xs text-muted-foreground">{t("permissions_center.scope_tab.hard_ceiling_label")}</p>
+          <p className="text-xl font-bold text-rassco-text mt-1.5">
             {snapshot.hardCeilingScope ? dataScopeLabel(t, snapshot.hardCeilingScope as DataScope) : "—"}
           </p>
         </div>
-        <div className="rounded-xl bg-muted/40 p-4">
-          <p className="text-[11px] text-muted-foreground">{t("permissions_center.scope_tab.assigned_region_label")}</p>
-          <p className={`text-lg font-bold mt-1 ${snapshot.regionId ? "text-rassco-text" : "text-amber-700"}`}>
+        <div className="rounded-xl bg-muted/40 p-5">
+          <p className="text-xs text-muted-foreground">{t("permissions_center.scope_tab.assigned_region_label")}</p>
+          <p className={`text-xl font-bold mt-1.5 ${snapshot.regionId ? "text-rassco-text" : "text-amber-700"}`}>
             {regionName || (snapshot.regionId ? snapshot.regionId : t("permissions_center.no_region"))}
           </p>
         </div>
-        <div className="rounded-xl bg-muted/40 p-4">
-          <p className="text-[11px] text-muted-foreground">{t("permissions_center.scope_tab.effective_scope_label")}</p>
-          <p className="text-lg font-bold text-rassco-text mt-1">{effectiveScopeLabel}</p>
+        <div className="rounded-xl bg-muted/40 p-5">
+          <p className="text-xs text-muted-foreground">{t("permissions_center.scope_tab.effective_scope_label")}</p>
+          <p className="text-xl font-bold text-rassco-text mt-1.5">{effectiveScopeLabel}</p>
         </div>
       </div>
-      <div className="flex items-start gap-2 rounded-xl bg-rassco/5 p-3 text-sm text-rassco-text">
+      <div className="flex items-start gap-2.5 rounded-xl bg-rassco/5 p-4 text-sm text-rassco-text">
         <MapPin className="h-4 w-4 mt-0.5 shrink-0 text-rassco" />
         <span>{t("permissions_center.hero.default_scope_caption")}</span>
       </div>
-      <div className="flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+      <div className="flex items-start gap-2.5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
         <Lock className="h-4 w-4 mt-0.5 shrink-0" />
         <span>{t("permissions_center.scope_tab.no_global_note")}</span>
       </div>
@@ -1053,27 +1127,27 @@ function AuditActivityList({
       ) : (
         <ul className="divide-y divide-rassco-border/60">
           {auditQuery.data.map((entry) => (
-            <li key={entry.id} className="flex items-start gap-3 px-4 py-3.5">
-              <span className="mt-0.5 h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
-                <History className="h-4 w-4 text-muted-foreground" />
+            <li key={entry.id} className="flex items-start gap-3.5 px-5 py-4">
+              <span className="mt-0.5 h-10 w-10 rounded-full bg-muted flex items-center justify-center shrink-0">
+                <History className="h-5 w-5 text-muted-foreground" />
               </span>
-              <div className="min-w-0 flex-1 space-y-1">
+              <div className="min-w-0 flex-1 space-y-1.5">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                  <p className="text-sm font-semibold text-rassco-text">{permissionLabel(t, entry.page, entry.action)}</p>
-                  <p className="text-[11px] text-muted-foreground whitespace-nowrap">
+                  <p className="text-base font-semibold text-rassco-text">{permissionLabel(t, entry.page, entry.action)}</p>
+                  <p className="text-xs text-muted-foreground whitespace-nowrap">
                     {new Date(entry.changedAt).toLocaleString(dir === "rtl" ? "ar-SA" : "en-US")}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[11px]">
+                  <Badge variant="outline" className="text-xs">
                     {overrideValueLabel(t, entry.oldValue as OverrideValue | null)}
                   </Badge>
                   <span className="text-muted-foreground text-xs">→</span>
-                  <Badge variant="outline" className="text-[11px]">
+                  <Badge variant="outline" className="text-xs">
                     {overrideValueLabel(t, entry.newValue as OverrideValue | null)}
                   </Badge>
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   {t("permissions_center.audit.changed_by")}: {usersById.get(entry.changedBy)?.fullName || entry.changedBy}
                   {" · "}
                   {entry.reason || t("permissions_center.audit.no_reason")}

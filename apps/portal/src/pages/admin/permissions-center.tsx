@@ -59,18 +59,18 @@ export default function PermissionsCenterPage() {
   return (
     <div className="space-y-5" dir={dir}>
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-xl bg-rassco/10 flex items-center justify-center shrink-0">
-            <ShieldCheck className="h-5 w-5 text-rassco" />
+        <div className="flex items-center gap-4">
+          <div className="h-14 w-14 rounded-2xl bg-rassco/10 flex items-center justify-center shrink-0">
+            <ShieldCheck className="h-7 w-7 text-rassco" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-rassco-text leading-tight">{t("titles.permissions_center")}</h1>
-            <p className="text-sm text-muted-foreground">{t("permissions_center.subtitle")}</p>
+            <h1 className="text-2xl font-bold text-rassco-text leading-tight">{t("titles.permissions_center")}</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">{t("permissions_center.subtitle")}</p>
           </div>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6 items-start">
         <SupervisorDirectory
           supervisors={supervisors}
           regionsById={regionsById}
@@ -90,13 +90,13 @@ export default function PermissionsCenterPage() {
             onChangeSupervisor={() => setSelectedUserId(null)}
           />
         ) : (
-          <div className="rounded-2xl bg-white shadow-sm flex items-center gap-4 p-6">
-            <div className="h-11 w-11 rounded-xl bg-rassco/10 flex items-center justify-center shrink-0">
-              <ShieldQuestion className="h-5 w-5 text-rassco" />
+          <div className="rounded-2xl bg-white shadow-sm flex items-center gap-5 p-10 min-h-[320px]">
+            <div className="h-16 w-16 rounded-2xl bg-rassco/10 flex items-center justify-center shrink-0">
+              <ShieldQuestion className="h-8 w-8 text-rassco" />
             </div>
             <div>
-              <p className="font-semibold text-rassco-text text-sm">{t("permissions_center.select_supervisor")}</p>
-              <p className="text-sm text-muted-foreground">{t("permissions_center.select_supervisor_hint")}</p>
+              <p className="font-bold text-rassco-text text-lg">{t("permissions_center.select_supervisor")}</p>
+              <p className="text-sm text-muted-foreground mt-1">{t("permissions_center.select_supervisor_hint")}</p>
             </div>
           </div>
         )}

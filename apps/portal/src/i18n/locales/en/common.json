@@ -171,10 +171,21 @@
       "expand_hint": "Show details",
       "collapse_hint": "Hide details",
       "actions_available": "{count} available action(s)",
-      "region_filter_all": "All regions"
+      "region_filter_all": "All regions",
+      "manage_cta": "Manage permissions",
+      "manage_cta_close": "Hide management",
+      "manage_prompt": "Select a capability above to see its effective state and manage it",
+      "page_access_label": "Page access",
+      "ungoverned_locked_note": "Cannot be customized right now"
     },
     "extra_pages": {
       "technician_details": "Technician Profile & Inventory"
+    },
+    "detail": {
+      "permission_label": "Permission",
+      "effective_state_label": "Effective state",
+      "source_label": "Source",
+      "scope_label": "Data scope"
     },
     "scope_tab": {
       "subtitle": "The data boundary this supervisor's permissions operate within",

@@ -171,10 +171,21 @@
       "expand_hint": "عرض التفاصيل",
       "collapse_hint": "إخفاء التفاصيل",
       "actions_available": "{count} إجراء متاح",
-      "region_filter_all": "جميع المناطق"
+      "region_filter_all": "جميع المناطق",
+      "manage_cta": "إدارة الصلاحيات",
+      "manage_cta_close": "إخفاء الإدارة",
+      "manage_prompt": "اختر إجراءً من الأعلى لعرض حالته الفعلية وإدارته",
+      "page_access_label": "دخول الصفحة",
+      "ungoverned_locked_note": "لا يمكن تخصيصها حاليًا"
     },
     "extra_pages": {
       "technician_details": "بيانات ومخزون الفني"
+    },
+    "detail": {
+      "permission_label": "الصلاحية",
+      "effective_state_label": "الحالة الفعلية",
+      "source_label": "المصدر",
+      "scope_label": "نطاق البيانات"
     },
     "scope_tab": {
       "subtitle": "الحدود التي تعمل ضمنها صلاحيات هذا المشرف",
