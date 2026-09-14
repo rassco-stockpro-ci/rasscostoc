@@ -1,7 +1,34 @@
-import type { Express, Request, Response } from "express";
+import type { Express, NextFunction, Request, Response } from "express";
 import { requireAuth, requireAdmin } from "@core/middlewares/auth.middleware";
+import { AuthenticationError, AuthorizationError } from "@core/errors/AppError";
+import { ROLES } from "@shared/roles";
 import { pool } from "@core/config/db";
 import { logger } from "@server/utils/logger";
+
+/**
+ * OPS-SEC-FOLLOWUP-LEADS-AUDIT-SUMMARY-READ-AUTHORIZATION
+ *
+ * Product/Security Owner decision for GET /api/leads/discovery/audit-summary:
+ * authorized for Admin and Supervisor ONLY, GLOBAL scope. courier_supervisor
+ * is explicitly EXCLUDED even though it shares ROLE_ORDER tier 3 with
+ * supervisor (packages/shared-types/roles.ts) — so the codebase's usual
+ * canonical role-tier mechanisms (requireSupervisor / requireRole /
+ * hasRoleOrAbove) are deliberately NOT used here, since every one of them
+ * would implicitly admit courier_supervisor via that tier tie. This is a
+ * narrow, feature-specific exact-role allow-list built from the same
+ * canonical primitives requireAdmin itself uses (ROLES,
+ * AuthenticationError/AuthorizationError, the same middleware shape) — not a
+ * new authorization subsystem, and not users.permissions.
+ */
+function requireAdminOrSupervisorExact(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user) {
+    return next(new AuthenticationError("Authentication required"));
+  }
+  if (req.user.role !== ROLES.ADMIN && req.user.role !== ROLES.SUPERVISOR) {
+    return next(new AuthorizationError("يجب أن تكون مدير نظام أو مشرف للوصول إلى هذه البيانات"));
+  }
+  next();
+}
 
 interface DiscoveryLogEntry {
   id: string;
@@ -233,8 +260,14 @@ export function registerLeadDiscoveryAuditRoutes(app: Express): void {
   /**
    * GET /api/leads/discovery/audit-summary
    * Returns analytical audit stats regarding which users used API keys to fetch leads.
+   *
+   * OPS-SEC-FOLLOWUP-LEADS-AUDIT-SUMMARY-READ-AUTHORIZATION: Admin and
+   * Supervisor only (GLOBAL scope), per Product/Security Owner decision.
+   * courier_supervisor, technician, viewer, and warehouse are explicitly
+   * denied. See requireAdminOrSupervisorExact above for why the usual
+   * role-tier middlewares are not used.
    */
-  app.get("/api/leads/discovery/audit-summary", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/leads/discovery/audit-summary", requireAuth, requireAdminOrSupervisorExact, async (_req: Request, res: Response) => {
     try {
       let logs: DiscoveryLogEntry[] = [...inMemoryLogs];
 
