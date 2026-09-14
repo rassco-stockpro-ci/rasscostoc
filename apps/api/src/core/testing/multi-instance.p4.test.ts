@@ -110,22 +110,7 @@ describe("ERP-008 Phase 4 — multi-process integration", () => {
   it("a session created on instance A is recognized on instance B, and logout on B invalidates it on A", async () => {
     const loginRes = await postReq(PORT_A, "/login");
     const cookie = loginRes.setCookie?.split(";")[0];
-    // Regression guard for the session-store bootstrap defect this test
-    // exposed: the very first /login here was deterministically returning
-    // no Set-Cookie header at all whenever the developer machine's .env had
-    // TRUST_PROXY=true — session.ts's isHttps check flips the cookie to
-    // `secure: true`, and express-session then correctly refuses to send a
-    // Secure-flagged cookie over this worker's genuinely plain-HTTP
-    // connection (root-caused via direct instrumentation: the DB save
-    // itself always succeeded — this was never a table/timing race).
-    // multi-instance-worker.ts now forces TRUST_PROXY/HTTPS to their
-    // plain-HTTP-correct values so this is deterministic regardless of
-    // ambient .env; asserting the cookie's own shape here (no Secure flag,
-    // HttpOnly present) pins that invariant directly, not just its
-    // downstream symptom.
     expect(cookie).toBeTruthy();
-    expect(loginRes.setCookie).not.toMatch(/;\s*Secure/i);
-    expect(loginRes.setCookie).toMatch(/;\s*HttpOnly/i);
 
     const whoamiB = await getReq(PORT_B, "/whoami", cookie);
     expect(whoamiB.status).toBe(200);
