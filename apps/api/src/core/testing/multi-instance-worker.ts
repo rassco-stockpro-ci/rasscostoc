@@ -13,6 +13,23 @@
 import "dotenv/config";
 process.env.NODE_ENV = "production"; // rateLimiter is a no-op outside production
 process.env.BYPASS_OUTBOX = "false";
+// This worker always talks plain HTTP (127.0.0.1, no TLS, no reverse proxy
+// in front of it). Without this, core/config/session.ts's `isHttps` check
+// (`isProduction && TRUST_PROXY === "true"`) inherits whatever TRUST_PROXY
+// a developer's local .env happens to set for real local-dev-behind-a-proxy
+// setups, which flips the session cookie to `secure: true`. express-session
+// then correctly refuses to ever emit a Secure-flagged Set-Cookie header
+// over a genuinely non-HTTPS connection (its own internal
+// `cookie.secure && !issecure(req)` guard) — so the very first /login
+// request here would deterministically receive no cookie at all, on any
+// machine where that .env value happens to be set (root-caused via direct
+// instrumentation: the session save itself succeeds with no error; the
+// cookie header is just silently withheld). Force both flags to their
+// plain-HTTP-correct values so this worker's session behavior is an
+// explicit, self-contained contract, never dependent on the developer
+// machine's ambient .env.
+process.env.TRUST_PROXY = "false";
+process.env.HTTPS = "false";
 
 import express from "express";
 import { rateLimiter } from "@core/middlewares/security.middleware";
