@@ -46,7 +46,9 @@
     "logs": "System Audit Logs",
     "backup": "Backup Management",
     "item-types": "Item Types Management",
-    "ai-engine-settings": "AI Engine Settings"
+    "ai-engine-settings": "AI Engine Settings",
+    "permissions-center": "Permissions Center",
+    "leads-audit": "Keys & Accounts Log"
   },
   "titles": {
     "home": "Home",
@@ -98,7 +100,202 @@
     "backup": "Backup Management",
     "item_types": "Item Types",
     "item_type_details": "Item Type Details",
-    "ai_engine_settings": "AI Connection Settings"
+    "ai_engine_settings": "AI Connection Settings",
+    "permissions_center": "Permissions Center"
+  },
+  "permissions_center": {
+    "subtitle": "Manage supervisor permissions per page and action, layered on top of the role's default template and within its hard ceiling",
+    "summary_heading": "Permissions summary",
+    "scope_note": "Current scope: Admin can manage permissions for Supervisor-role employees only. Other roles remain governed by their existing path and are not shown here.",
+    "search_placeholder": "Search a supervisor by name, username, or email",
+    "supervisors_heading": "Supervisors",
+    "supervisors_count": "{count} supervisor(s)",
+    "no_supervisors": "There are no Supervisor-role users in the system yet",
+    "no_supervisors_search": "No supervisors match your search",
+    "select_supervisor": "Select a supervisor",
+    "select_supervisor_hint": "Pick a supervisor from the list to view and edit their permissions",
+    "inactive_badge": "Inactive",
+    "active_badge": "Active",
+    "no_region": "No region",
+    "loading_employees": "Loading users...",
+    "loading_snapshot": "Loading supervisor permissions...",
+    "loading_audit": "Loading change history...",
+    "retry": "Retry",
+    "inactive_account_warning": "This supervisor's account is currently inactive — no permission below will take effect, regardless of its state here, until the account is reactivated.",
+    "no_region_warning": "This supervisor has no assigned region — region-scoped permissions will not actually take effect until a region is assigned from the User Management page.",
+    "tabs": {
+      "access": "Access & Permissions",
+      "page_access": "Page Access",
+      "actions": "Action Permissions",
+      "scope": "Data Scope",
+      "audit": "Change History"
+    },
+    "filters": {
+      "search_placeholder": "Search by page name",
+      "all": "All",
+      "allowed": "Allowed only",
+      "denied": "Denied only",
+      "overridden": "Manually overridden",
+      "locked": "Locked"
+    },
+    "hero": {
+      "region_label": "Assigned Region",
+      "default_scope_caption": "Default operational scope: Region-level",
+      "hard_ceiling_label": "Hard Ceiling",
+      "selected_badge": "Selected Supervisor",
+      "change_supervisor": "Change supervisor",
+      "role_label": "Role"
+    },
+    "summary": {
+      "default_label": "Default Permissions",
+      "granted_label": "Granted",
+      "revoked_label": "Revoked",
+      "effective_label": "Effective"
+    },
+    "page_access": {
+      "subtitle": "Whether this supervisor can access each page at all, based on its view permission",
+      "access_available": "Accessible",
+      "access_none": "No access",
+      "effective_count": "{allowed} of {total} permissions effective",
+      "governed_heading": "Pages governed by this Permissions Center",
+      "ungoverned_heading": "Pages needing permission-engine linkage",
+      "ungoverned_subtitle": "Real StockPro pages this Supervisor's role can see, that have not yet been linked to the Permission Engine at the page/action level. Shown for transparency, never hidden.",
+      "ungoverned_badge": "Not yet linked",
+      "ungoverned_reason": "This page has not been linked to the Permission Engine yet",
+      "admin_only_heading": "System-administrator only",
+      "admin_only_subtitle": "Pages isolated by an independent, server-side security policy — not grantable from any permissions panel, including this one.",
+      "admin_only_badge": "Not grantable",
+      "admin_only_reason": "Reserved for the system administrator",
+      "no_matches": "No pages match this search/filter",
+      "override_badge": "Manual override",
+      "expand_hint": "Show details",
+      "collapse_hint": "Hide details",
+      "actions_available": "{count} available action(s)",
+      "region_filter_all": "All regions",
+      "manage_cta": "Manage permissions",
+      "manage_cta_close": "Hide management",
+      "manage_prompt": "Select a capability above to see its effective state and manage it",
+      "page_access_label": "Page access",
+      "ungoverned_locked_note": "Cannot be customized right now"
+    },
+    "extra_pages": {
+      "technician_details": "Technician Profile & Inventory"
+    },
+    "detail": {
+      "permission_label": "Permission",
+      "effective_state_label": "Effective state",
+      "source_label": "Source",
+      "scope_label": "Data scope"
+    },
+    "scope_tab": {
+      "subtitle": "The data boundary this supervisor's permissions operate within",
+      "role_label": "Role",
+      "hard_ceiling_label": "Hard Role Ceiling",
+      "assigned_region_label": "Assigned Region",
+      "effective_scope_label": "Applied Effective Scope",
+      "effective_scope_none": "No effective permission right now",
+      "no_global_note": "Supervisor never receives automatic Global access — every grant stays bounded to their assigned region."
+    },
+    "pages_desc": {
+      "courier_requests": "Delivery/courier request records",
+      "warehouse_inventory": "Warehouse stock levels",
+      "warehouse_transfers": "Stock transfer operations between warehouses",
+      "reports_operational": "Operational reporting"
+    },
+    "table": {
+      "page": "Page",
+      "action": "Action",
+      "default": "Default",
+      "assigned": "Assigned",
+      "effective": "Effective"
+    },
+    "default_granted": "Granted by default",
+    "default_not_granted": "Not granted by default",
+    "not_available_for_role": "Not available for this role",
+    "not_available_hint": "This permission is beyond the Supervisor role's hard ceiling and cannot be granted from this panel.",
+    "toggle": {
+      "grant": "Grant",
+      "default": "Default",
+      "revoke": "Revoke"
+    },
+    "effective_allowed": "Allowed",
+    "effective_denied": "Denied",
+    "confirm_dialog": {
+      "grant_title": "Confirm granting this permission",
+      "revoke_title": "Confirm revoking this permission",
+      "reset_title": "Confirm resetting to default",
+      "grant_description": "\"{permission}\" will be explicitly granted to this supervisor, regardless of their role's default template.",
+      "revoke_description": "\"{permission}\" will be explicitly revoked from this supervisor, even if it is granted by default for their role.",
+      "reset_description": "Any recorded override for \"{permission}\" will be removed, falling back to the Supervisor role's default template.",
+      "field_supervisor": "Supervisor",
+      "field_page": "Page",
+      "field_action": "Action",
+      "field_current_state": "Current state",
+      "field_requested_state": "Requested state",
+      "field_scope": "Data scope",
+      "reason_label": "Reason for this change (optional, saved to the audit log)",
+      "reason_placeholder": "e.g. covering leave, temporary added responsibility...",
+      "confirm": "Confirm",
+      "cancel": "Cancel"
+    },
+    "toast": {
+      "grant_success": "Permission granted successfully",
+      "revoke_success": "Permission revoked successfully",
+      "reset_success": "Permission reset to default",
+      "write_error": "Could not apply this change"
+    },
+    "audit": {
+      "empty": "No change history for this supervisor yet",
+      "date": "Date",
+      "permission": "Permission",
+      "from": "From",
+      "to": "To",
+      "reason": "Reason",
+      "changed_by": "By",
+      "no_reason": "No reason recorded"
+    },
+    "pages": {
+      "courier_requests": "Courier Requests",
+      "warehouse_inventory": "Warehouse Inventory",
+      "warehouse_transfers": "Warehouse Transfers",
+      "reports_operational": "Operational Reports"
+    },
+    "actions": {
+      "view": "View",
+      "create": "Create",
+      "update": "Update",
+      "approve": "Approve",
+      "transfer": "Transfer"
+    },
+    "sources": {
+      "admin": "Admin (system-wide)",
+      "role-template": "Role default template",
+      "override": "Direct admin override"
+    },
+    "reasons": {
+      "actor-inactive": "Account is inactive",
+      "unknown-role": "Unknown role",
+      "role-ceiling": "Beyond this role's hard ceiling",
+      "no-grant": "Not currently granted",
+      "explicit-deny": "Explicitly revoked by admin",
+      "scope-unresolved": "Permission scope could not be resolved",
+      "scope-mismatch": "Resource scope does not match the user's scope",
+      "actor-region-missing": "This supervisor has no assigned region",
+      "resource-region-missing": "Resource region is not set",
+      "not-own-resource": "Resource is not owned by this user"
+    },
+    "scopes": {
+      "GLOBAL": "Global",
+      "REGION": "Region-level",
+      "WAREHOUSE": "Warehouse-level",
+      "RELATION": "Relation-based",
+      "SELF": "Self only"
+    },
+    "override_values": {
+      "grant": "Grant",
+      "revoke": "Revoke",
+      "reset": "Default (no override)"
+    }
   },
   "ai_engine_settings": {
     "subtitle": "Add an API key and select provider/model for scanned PDF extraction",

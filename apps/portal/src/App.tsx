@@ -65,6 +65,7 @@ const CourierSettingsPage = lazy(() => import("@/pages/courier/courier-settings"
 const CourierObservabilityPage = lazy(() => import("@/pages/courier/courier-observability"));
 const AiReviewWorkspacePage = lazy(() => import("@/pages/ai-review/ai-review-workspace-page"));
 const AiEngineSettingsPage = lazy(() => import("@/pages/admin/ai-engine-settings"));
+const PermissionsCenterPage = lazy(() => import("@/pages/admin/permissions-center"));
 const LeadDiscoveryAuditPage = lazy(() => import("@/pages/lead-discovery-audit"));
 
 function PageLoader() {
@@ -171,6 +172,7 @@ function AuthenticatedRouter() {
           <Route path="/item-types" component={withShell(ItemTypesManagement, "titles.item_types")} />
           <Route path="/item-types/:id/details" component={withShell(ItemTypeDetailsPage, "titles.item_type_details")} />
           <Route path="/ai-engine/settings" component={withShell(AiEngineSettingsPage, "titles.ai_engine_settings")} />
+          <Route path="/admin/permissions" component={withShell(PermissionsCenterPage, "titles.permissions_center")} />
         </>
       )}
       <Route component={NotFound} />

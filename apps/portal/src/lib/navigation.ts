@@ -23,6 +23,7 @@ import {
   Activity,
   QrCode,
   Key,
+  Lock,
   type LucideIcon
 } from "lucide-react";
 import { ROLES } from "@shared/roles";
@@ -187,6 +188,13 @@ export const navigationRegistry: NavigationItem[] = [
     href: "/ai-engine/settings",
     labelKey: "nav.ai-engine-settings",
     icon: BrainCircuit,
+    roles: [ROLES.ADMIN]
+  },
+  {
+    id: "permissions-center",
+    href: "/admin/permissions",
+    labelKey: "nav.permissions-center",
+    icon: Lock,
     roles: [ROLES.ADMIN]
   },
   {

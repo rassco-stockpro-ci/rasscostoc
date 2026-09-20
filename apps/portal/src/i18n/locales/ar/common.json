@@ -46,7 +46,9 @@
     "logs": "سجل النظام والرقابة",
     "backup": "النسخ الاحتياطية",
     "item-types": "إدارة أنواع الأصناف",
-    "ai-engine-settings": "إعدادات الذكاء الاصطناعي"
+    "ai-engine-settings": "إعدادات الذكاء الاصطناعي",
+    "permissions-center": "مركز الصلاحيات",
+    "leads-audit": "سجل المفاتيح والحسابات"
   },
   "titles": {
     "home": "الصفحة الرئيسية",
@@ -98,7 +100,202 @@
     "backup": "إدارة النسخ الاحتياطية",
     "item_types": "إدارة الأصناف",
     "item_type_details": "تفاصيل الصنف",
-    "ai_engine_settings": "إعدادات ربط الذكاء الاصطناعي"
+    "ai_engine_settings": "إعدادات ربط الذكاء الاصطناعي",
+    "permissions_center": "مركز الصلاحيات"
+  },
+  "permissions_center": {
+    "subtitle": "إدارة صلاحيات المشرفين على مستوى الصفحة والإجراء، فوق القالب الافتراضي للدور وضمن الحد الأقصى المسموح به",
+    "summary_heading": "ملخص الصلاحيات",
+    "scope_note": "النطاق الحالي: يمكن للمدير إدارة صلاحيات موظفين بدور «مشرف عام» فقط. الأدوار الأخرى تبقى مُدارة عبر مسارها الحالي ولا تظهر هنا.",
+    "search_placeholder": "ابحث باسم المشرف أو اسم المستخدم أو البريد الإلكتروني",
+    "supervisors_heading": "المشرفون",
+    "supervisors_count": "{count} مشرف",
+    "no_supervisors": "لا يوجد مستخدمون بدور «مشرف عام» في النظام حاليًا",
+    "no_supervisors_search": "لا يوجد مشرفون مطابقون لبحثك",
+    "select_supervisor": "اختر مشرفًا من القائمة",
+    "select_supervisor_hint": "اختر مشرفًا من القائمة على اليمين لعرض صلاحياته وتعديلها",
+    "inactive_badge": "غير مفعّل",
+    "active_badge": "مفعّل",
+    "no_region": "بدون منطقة",
+    "loading_employees": "جاري تحميل قائمة المستخدمين...",
+    "loading_snapshot": "جاري تحميل صلاحيات المشرف...",
+    "loading_audit": "جاري تحميل سجل التغييرات...",
+    "retry": "إعادة المحاولة",
+    "inactive_account_warning": "حساب هذا المشرف غير مُفعّل حاليًا — لن تُطبَّق أي صلاحية له بغض النظر عن حالتها هنا حتى يُعاد تفعيل الحساب.",
+    "no_region_warning": "لا توجد منطقة مُسندة لهذا المشرف — الصلاحيات ذات النطاق «على مستوى المنطقة» لن تعمل فعليًا حتى يتم إسناد منطقة له من صفحة إدارة المستخدمين.",
+    "tabs": {
+      "access": "الوصول والصلاحيات",
+      "page_access": "الوصول للصفحات",
+      "actions": "صلاحيات الإجراءات",
+      "scope": "نطاق البيانات",
+      "audit": "سجل التغييرات"
+    },
+    "filters": {
+      "search_placeholder": "ابحث باسم الصفحة",
+      "all": "الكل",
+      "allowed": "المسموح فقط",
+      "denied": "الممنوع فقط",
+      "overridden": "المعدل يدويًا",
+      "locked": "مقفلة"
+    },
+    "hero": {
+      "region_label": "المنطقة المُسندة",
+      "default_scope_caption": "النطاق الافتراضي: المنطقة",
+      "hard_ceiling_label": "الحد الأقصى المسموح به",
+      "selected_badge": "المشرف المحدد",
+      "change_supervisor": "تغيير المشرف",
+      "role_label": "الدور"
+    },
+    "summary": {
+      "default_label": "الصلاحيات الافتراضية",
+      "granted_label": "ممنوحة",
+      "revoked_label": "مسحوبة",
+      "effective_label": "فعّالة"
+    },
+    "page_access": {
+      "subtitle": "إمكانية وصول هذا المشرف لكل صفحة، بناءً على صلاحية العرض الخاصة بها",
+      "access_available": "متاح الوصول",
+      "access_none": "لا يوجد وصول",
+      "effective_count": "{allowed} من {total} صلاحيات فعالة",
+      "governed_heading": "صفحات تُدار عبر مركز الصلاحيات",
+      "ungoverned_heading": "صفحات تحتاج ربطًا بنظام الصلاحيات",
+      "ungoverned_subtitle": "صفحات حقيقية في StockPro يستطيع دور «مشرف عام» رؤيتها حسب دوره فقط، ولم تُربط بعد بمحرك الصلاحيات على مستوى الصفحة/الإجراء. تُعرض هنا للشفافية، ولا تُخفى أبدًا.",
+      "ungoverned_badge": "غير مرتبطة بعد",
+      "ungoverned_reason": "لم يتم ربط هذه الصفحة بمحرك الصلاحيات بعد",
+      "admin_only_heading": "خاص بمدير النظام",
+      "admin_only_subtitle": "صفحات معزولة بسياسة أمنية مستقلة على مستوى الخادم — غير قابلة للمنح من أي لوحة إدارة صلاحيات، بما فيها هذه.",
+      "admin_only_badge": "غير قابل للمنح",
+      "admin_only_reason": "خاص بمدير النظام",
+      "no_matches": "لا توجد صفحات مطابقة لهذا البحث/الفلتر",
+      "override_badge": "تعديل يدوي",
+      "expand_hint": "عرض التفاصيل",
+      "collapse_hint": "إخفاء التفاصيل",
+      "actions_available": "{count} إجراء متاح",
+      "region_filter_all": "جميع المناطق",
+      "manage_cta": "إدارة الصلاحيات",
+      "manage_cta_close": "إخفاء الإدارة",
+      "manage_prompt": "اختر إجراءً من الأعلى لعرض حالته الفعلية وإدارته",
+      "page_access_label": "دخول الصفحة",
+      "ungoverned_locked_note": "لا يمكن تخصيصها حاليًا"
+    },
+    "extra_pages": {
+      "technician_details": "بيانات ومخزون الفني"
+    },
+    "detail": {
+      "permission_label": "الصلاحية",
+      "effective_state_label": "الحالة الفعلية",
+      "source_label": "المصدر",
+      "scope_label": "نطاق البيانات"
+    },
+    "scope_tab": {
+      "subtitle": "الحدود التي تعمل ضمنها صلاحيات هذا المشرف",
+      "role_label": "الدور",
+      "hard_ceiling_label": "الحد الأقصى لصلاحيات الدور",
+      "assigned_region_label": "المنطقة المُسندة",
+      "effective_scope_label": "النطاق الفعلي المطبَّق",
+      "effective_scope_none": "لا توجد صلاحية فعّالة حاليًا",
+      "no_global_note": "لا يحصل المشرف على وصول عام (Global) تلقائيًا مطلقًا — تبقى كل صلاحياته ضمن حدود منطقته المُسندة فقط."
+    },
+    "pages_desc": {
+      "courier_requests": "طلبات التوصيل الخاصة بالمندوبين",
+      "warehouse_inventory": "أرصدة المخزون في المستودع",
+      "warehouse_transfers": "عمليات مناقلة المخزون بين المستودعات",
+      "reports_operational": "التقارير التشغيلية اليومية"
+    },
+    "table": {
+      "page": "الصفحة",
+      "action": "الإجراء",
+      "default": "الافتراضي",
+      "assigned": "التخصيص",
+      "effective": "الأثر الفعلي"
+    },
+    "default_granted": "ممنوحة افتراضيًا",
+    "default_not_granted": "غير ممنوحة افتراضيًا",
+    "not_available_for_role": "غير متاحة لهذا الدور",
+    "not_available_hint": "هذه الصلاحية تتجاوز الحد الأقصى المسموح به لدور «مشرف عام» ولا يمكن منحها من هذه اللوحة.",
+    "toggle": {
+      "grant": "منح",
+      "default": "افتراضي",
+      "revoke": "سحب"
+    },
+    "effective_allowed": "مسموح",
+    "effective_denied": "محظور",
+    "confirm_dialog": {
+      "grant_title": "تأكيد منح الصلاحية",
+      "revoke_title": "تأكيد سحب الصلاحية",
+      "reset_title": "تأكيد إعادة الضبط إلى الافتراضي",
+      "grant_description": "سيتم منح صلاحية «{permission}» صراحةً لهذا المشرف، بغض النظر عن القالب الافتراضي لدوره.",
+      "revoke_description": "سيتم سحب صلاحية «{permission}» صراحةً من هذا المشرف، حتى لو كانت ممنوحة افتراضيًا لدوره.",
+      "reset_description": "ستتم إزالة أي تخصيص مسجَّل لصلاحية «{permission}» والعودة إلى القالب الافتراضي لدور «مشرف عام».",
+      "field_supervisor": "المشرف",
+      "field_page": "الصفحة",
+      "field_action": "الإجراء",
+      "field_current_state": "الحالة الحالية",
+      "field_requested_state": "الحالة المطلوبة",
+      "field_scope": "نطاق البيانات",
+      "reason_label": "سبب التغيير (اختياري، يُحفظ في سجل التدقيق)",
+      "reason_placeholder": "مثال: تغطية إجازة، مسؤولية مؤقتة إضافية...",
+      "confirm": "تأكيد",
+      "cancel": "إلغاء"
+    },
+    "toast": {
+      "grant_success": "تم منح الصلاحية بنجاح",
+      "revoke_success": "تم سحب الصلاحية بنجاح",
+      "reset_success": "تمت إعادة الصلاحية إلى الوضع الافتراضي",
+      "write_error": "تعذر تنفيذ التغيير"
+    },
+    "audit": {
+      "empty": "لا يوجد سجل تغييرات لهذا المشرف بعد",
+      "date": "التاريخ",
+      "permission": "الصلاحية",
+      "from": "من",
+      "to": "إلى",
+      "reason": "السبب",
+      "changed_by": "بواسطة",
+      "no_reason": "بدون سبب مسجَّل"
+    },
+    "pages": {
+      "courier_requests": "طلبات التوصيل",
+      "warehouse_inventory": "مخزون المستودع",
+      "warehouse_transfers": "تحويلات المستودع",
+      "reports_operational": "التقارير التشغيلية"
+    },
+    "actions": {
+      "view": "عرض",
+      "create": "إنشاء",
+      "update": "تعديل",
+      "approve": "اعتماد",
+      "transfer": "تنفيذ التحويل"
+    },
+    "sources": {
+      "admin": "مدير النظام (صلاحية شاملة)",
+      "role-template": "القالب الافتراضي للدور",
+      "override": "تخصيص مباشر من المدير"
+    },
+    "reasons": {
+      "actor-inactive": "الحساب غير مُفعّل",
+      "unknown-role": "دور غير معروف",
+      "role-ceiling": "تتجاوز الحد الأقصى المسموح به لهذا الدور",
+      "no-grant": "غير ممنوحة حاليًا",
+      "explicit-deny": "مسحوبة صراحةً من قبل المدير",
+      "scope-unresolved": "تعذر تحديد نطاق الصلاحية",
+      "scope-mismatch": "نطاق المورد لا يطابق نطاق المستخدم",
+      "actor-region-missing": "لا توجد منطقة مُسندة لهذا المشرف",
+      "resource-region-missing": "منطقة المورد غير محددة",
+      "not-own-resource": "المورد ليس مملوكًا لهذا المستخدم"
+    },
+    "scopes": {
+      "GLOBAL": "شامل",
+      "REGION": "على مستوى المنطقة",
+      "WAREHOUSE": "على مستوى المستودع",
+      "RELATION": "علاقة محددة",
+      "SELF": "الحساب الشخصي فقط"
+    },
+    "override_values": {
+      "grant": "منح",
+      "revoke": "سحب",
+      "reset": "افتراضي (بدون تخصيص)"
+    }
   },
   "ai_engine_settings": {
     "subtitle": "أضف مفتاح API واختر المزود والموديل لاستخراج تقارير PDF الممسوحة",
