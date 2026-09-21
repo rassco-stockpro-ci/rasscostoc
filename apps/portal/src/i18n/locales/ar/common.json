@@ -200,7 +200,8 @@
       "courier_requests": "طلبات التوصيل الخاصة بالمندوبين",
       "warehouse_inventory": "أرصدة المخزون في المستودع",
       "warehouse_transfers": "عمليات مناقلة المخزون بين المستودعات",
-      "reports_operational": "التقارير التشغيلية اليومية"
+      "reports_operational": "التقارير التشغيلية اليومية",
+      "system_auditLogs": "سجل النشاط والتدقيق على مستوى النظام"
     },
     "table": {
       "page": "الصفحة",
@@ -258,7 +259,8 @@
       "courier_requests": "طلبات التوصيل",
       "warehouse_inventory": "مخزون المستودع",
       "warehouse_transfers": "تحويلات المستودع",
-      "reports_operational": "التقارير التشغيلية"
+      "reports_operational": "التقارير التشغيلية",
+      "system_auditLogs": "سجلات تدقيق النظام"
     },
     "actions": {
       "view": "عرض",

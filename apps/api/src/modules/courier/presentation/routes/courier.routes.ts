@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import path from "path";
 import { bootstrapCourierModule } from "../../composition/courier.container";
 import { requireAuth, requireAuthOrInternal, requireAdmin } from "@core/middlewares/auth.middleware";
+import { requireCatalogedPermission } from "@core/middlewares/requireCatalogedPermission.middleware";
 import {
   createExcelUpload,
   uploadErrorHandler,
@@ -35,7 +36,10 @@ export function registerCourierRoutes(app: Express): void {
   const controller = bootstrapCourierModule();
 
   // Requests CRUD
-  app.get("/api/courier/requests", requireAuth, controller.getRequests);
+  // OPS-PERM-S2: real Permission Engine enforcement for the "courier.requests:view"
+  // catalog entry — supervisor-role only (see requireCatalogedPermission's own doc
+  // comment); every other role's access is unchanged.
+  app.get("/api/courier/requests", requireAuth, requireCatalogedPermission("courier.requests", "view"), controller.getRequests);
   app.get("/api/courier/requests/export", requireAuth, controller.exportExcel);
   // OPS-PERM-S0-B1-B.MR1.B1: Admin authorization intentionally runs BEFORE
   // Multer's disk upload / magic-byte validation. Bulk import is Admin-only
@@ -57,7 +61,14 @@ export function registerCourierRoutes(app: Express): void {
   );
   app.get("/api/courier/requests/:id", requireAuth, controller.getRequest);
   app.post("/api/courier/requests", requireAuth, controller.createRequest);
-  app.put("/api/courier/requests/:id", requireAuth, controller.updateRequest);
+  // OPS-PERM-S2: real Permission Engine enforcement for "courier.requests:update" —
+  // supervisor-role only (see requireCatalogedPermission's own doc comment). Note:
+  // "courier.requests:create" is deliberately NOT gated here — CourierService.createRequest
+  // already permanently forbids every non-admin role, including supervisor, by explicit
+  // owner decision (see courier-service-region-writer-contract.test.ts), so the catalog's
+  // "create" entry currently has no real action to enforce; that catalog/business-logic
+  // mismatch is flagged separately, not silently wired around.
+  app.put("/api/courier/requests/:id", requireAuth, requireCatalogedPermission("courier.requests", "update"), controller.updateRequest);
   // OPS-PERM-S0-B0.I1: global, system-wide destructive operation — a proven
   // authenticated-but-unauthorized access defect (any operational role could
   // wipe every courier request). Restricted to Admin only. This changes only

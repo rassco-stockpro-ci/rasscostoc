@@ -5,6 +5,7 @@
 import type { Express } from "express";
 import { warehousesContainer } from "@server/composition/warehouses.container";
 import { requireAuth, requireAdmin, requireSupervisor } from "@core/middlewares/auth.middleware";
+import { requireCatalogedPermission } from "@core/middlewares/requireCatalogedPermission.middleware";
 import { validateBody } from "@core/middlewares/validation";
 import { insertWarehouseSchema } from "@shared/schema";
 import { z } from "zod";
@@ -69,10 +70,14 @@ export function registerWarehousesRoutes(app: Express): void {
   );
 
   // Get warehouse inventory
+  // OPS-PERM-S2: real Permission Engine enforcement for "warehouse.inventory:view" —
+  // supervisor-role only; admin/courier_supervisor keep their existing requireSupervisor
+  // access unchanged (see requireCatalogedPermission's own doc comment).
   app.get(
     "/api/warehouse-inventory/:warehouseId",
     requireAuth,
     requireSupervisor,
+    requireCatalogedPermission("warehouse.inventory", "view"),
     controller.getInventory
   );
 
