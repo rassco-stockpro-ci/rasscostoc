@@ -857,27 +857,14 @@ export class CourierService {
   }
 
   async saveExecution(requestId: number, data: any, enteredBy: string): Promise<any> {
-    // Check if execution exists
-    const existing = await this.executionsRepo.findExecutionByRequestId(requestId);
-    const request = await this.requestsRepo.findRequestById(requestId);
-
-    if (!request) {
-      throw new Error("الطلب غير موجود");
-    }
-
-    // Whitelist writable columns only — client payloads often include enteredAt/updatedAt
-    // as ISO strings which crash drizzle timestamp mapping (value.toISOString).
     const version = data?.version;
     const sanitized = CourierService.sanitizeExecutionPayload(data);
     const isCompleted = isCompletedStatus(sanitized.installationStatus);
-    // OPS-REMED-E3: `pairs` is not a courier_executions DB column (no
-    // migration authorized in this gate) — it is read from the RAW,
-    // unsanitized payload and carried only in-memory through to the
-    // workflow/event context for InventoryEngine's pairing validation.
+
+    // OPS-REMED-E3: pairs is not a courier_executions column. It remains
+    // in-memory and is carried through workflow/event context only.
     const pairs = Array.isArray(data?.pairs) ? data.pairs : undefined;
 
-    // Multi-serial close: arrays from portal; fall back to scalar sn / simSerial.
-    // Incomplete statuses never require serials and never deduct — omit serial fields from write.
     let deviceSerials = normalizeSerialList(data?.deviceSerials, data?.sn, sanitized.sn);
     let simSerials = normalizeSerialList(data?.simSerials, data?.simSerial, sanitized.simSerial);
 
@@ -891,26 +878,39 @@ export class CourierService {
       sanitized.simSerial = simSerials[0] ?? null;
     }
 
-    // ─── Guard Validation Layer ───────────────────────────────────────────────
-    const techUser = await CompletionGuard.run({
-      requestId,
-      enteredBy,
-      executionData: { ...sanitized, deviceSerials, simSerials },
-      request,
-      existingExecution: existing ?? null,
-      requestsRepo: this.requestsRepo,
-      dashboardRepo: this.dashboardRepo,
-      inventoryPort: this.inventoryPort,
-    });
-    // ─────────────────────────────────────────────────────────────────────────
-
-    if (techUser && isCompleted) {
-      sanitized.technicianCode = techUser.username;
-      sanitized.salesTechnician = techUser.fullName;
-    }
-
     let result: any;
+    let requestForWorkflow: any = null;
+
+    // Governance atomicity fix: CompletionGuard may auto-bind request items.
+    // It MUST execute inside the same UnitOfWork transaction as execution
+    // persistence and ExecutionSavedEvent outbox creation. A later save
+    // failure must roll back the guard-side request-item writes as well.
     await this.uow.execute(async (ctx) => {
+      const existing = await ctx.executionsRepository.findExecutionByRequestId(requestId);
+      const request = await ctx.requestsRepository.findRequestById(requestId);
+
+      if (!request) {
+        throw new Error("الطلب غير موجود");
+      }
+
+      requestForWorkflow = request;
+
+      const techUser = await CompletionGuard.run({
+        requestId,
+        enteredBy,
+        executionData: { ...sanitized, deviceSerials, simSerials },
+        request,
+        existingExecution: existing ?? null,
+        requestsRepo: ctx.requestsRepository,
+        dashboardRepo: ctx.dashboardRepository,
+        inventoryPort: ctx.inventoryPort,
+      });
+
+      if (techUser && isCompleted) {
+        sanitized.technicianCode = techUser.username;
+        sanitized.salesTechnician = techUser.fullName;
+      }
+
       if (existing) {
         result = await ctx.executionsRepository.updateExecution(
           requestId,
@@ -927,32 +927,22 @@ export class CourierService {
           );
         }
       } else {
-        result = await ctx.executionsRepository.insertExecution(
-          {
-            ...sanitized,
-            requestId,
-            enteredBy,
-            // OPS-REMED-E4-P4-I2: fresh execution row, whether or not this
-            // particular save is a completed installation — deduction is
-            // only ever triggered by the conditional ExecutionCompletedEvent
-            // enqueue further below in this same transaction, never by the
-            // insert itself.
-            custodyClosureStatus: "PENDING_DEDUCTION",
-          }
-        );
+        result = await ctx.executionsRepository.insertExecution({
+          ...sanitized,
+          requestId,
+          enteredBy,
+          custodyClosureStatus: "PENDING_DEDUCTION",
+        });
       }
 
-      // Log audit
       await ctx.dashboardRepository.insertAuditLog({
         tableName: "executions",
         recordId: requestId,
         action: existing ? "update" : "create",
-        changedBy: enteredBy
+        changedBy: enteredBy,
       });
 
-      // Publish ExecutionSavedEvent (inside tx so it is saved to outbox atomically)
-      const eventBus = EventBus.getInstance();
-      await eventBus.publish(
+      await EventBus.getInstance().publish(
         new ExecutionSavedEvent({
           requestId,
           actorId: enteredBy,
@@ -967,20 +957,14 @@ export class CourierService {
       throw new Error("Failed to save execution: database returned no rows.");
     }
 
-    // ─── Workflow Engine ──────────────────────────────────────────────────────
-    // Called AFTER guards pass and execution is written to DB.
-    // The engine decides the action and delegates side effects.
+    // Workflow side effects run only after the guarded persistence transaction
+    // has committed successfully.
     if (isCompleted) {
-      // OPS-REMED-E3: attach `pairs` onto the execution snapshot object
-      // (ExecutionSnapshot has an index signature, and ExecutionCompletedEvent's
-      // `execution` field is typed `any`) — no change to workflow.types.ts or
-      // events.ts required; pairs flows through to InventorySubscriber
-      // unmodified.
       const workflowResult = await CourierWorkflow.execute({
         requestId,
         actorId: enteredBy,
         execution: pairs ? { ...result, pairs } : result,
-        request,
+        request: requestForWorkflow,
       });
 
       if (workflowResult.sideEffectErrors.length > 0) {
@@ -990,11 +974,9 @@ export class CourierService {
         );
       }
     }
-    // ─────────────────────────────────────────────────────────────────────────
 
     return this.getRequestById(requestId);
   }
-
   /**
    * Serial Lookup — Central Serial Engine entry for close-order UI.
    * Returns item + custody owner technician for auto-fill (read-only in portal).

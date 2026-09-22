@@ -29,7 +29,11 @@ export class SerializedItemsAdapter implements ISerializedInventoryRepository {
    */
   async resolveItemId(rawSerial: string, ctx?: InventoryTransactionContext): Promise<string | null> {
     const client = ctx ? unwrapInventoryTransactionContext(ctx) : db;
-    const candidates = await SerialRecognitionService.buildStoredSerialCandidates(rawSerial);
+    const candidates = await SerialRecognitionService.buildStoredSerialCandidates(
+      rawSerial,
+      undefined,
+      client
+    );
     if (candidates.length === 0) return null;
 
     const matches = await client
@@ -68,7 +72,11 @@ export class SerializedItemsAdapter implements ISerializedInventoryRepository {
     ctx?: InventoryTransactionContext
   ): Promise<boolean> {
     const client = ctx ? unwrapInventoryTransactionContext(ctx) : db;
-    const candidates = await SerialRecognitionService.buildStoredSerialCandidates(serialNumber);
+    const candidates = await SerialRecognitionService.buildStoredSerialCandidates(
+      serialNumber,
+      undefined,
+      client
+    );
 
     const [item] = await client
       .select({ id: items.id, serialNumber: items.serialNumber })

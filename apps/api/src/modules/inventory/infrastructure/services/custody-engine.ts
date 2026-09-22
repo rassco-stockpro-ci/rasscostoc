@@ -7,7 +7,16 @@ export class CustodyEngine {
   private static async syncMovingInventory(tx: any, technicianId: string, itemTypeId: string, delta: number) {
     if (!technicianId || !itemTypeId || delta === 0) return;
 
-    const [existingEntry] = await tx
+    // Serialize custody-ledger changes for one technician/item type.
+    // This closes the read→insert race when the first custody event creates
+    // the moving-inventory row concurrently with another custody event.
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${technicianId + ":" + itemTypeId}, 0)
+      )
+    `);
+
+    const existingEntries = await tx
       .select()
       .from(technicianMovingInventoryEntries)
       .where(
@@ -15,8 +24,15 @@ export class CustodyEngine {
           eq(technicianMovingInventoryEntries.technicianId, technicianId),
           eq(technicianMovingInventoryEntries.itemTypeId, itemTypeId)
         )
-      )
-      .limit(1);
+      );
+
+    if (existingEntries.length > 1) {
+      throw new Error(
+        `Custody moving-inventory invariant violation: technician "${technicianId}" has ${existingEntries.length} rows for item type "${itemTypeId}".`
+      );
+    }
+
+    const existingEntry = existingEntries[0];
 
     if (existingEntry) {
       const newUnits = Math.max(0, existingEntry.units + delta);

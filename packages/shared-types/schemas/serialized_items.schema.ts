@@ -12,7 +12,8 @@ export const ITEM_STATUSES = [
   "IN_TRANSIT_CUSTODY", 
   "RECEIVED_BY_TECHNICIAN",
   "IN_TRANSIT",
-  "DELIVERED"
+  "DELIVERED",
+  "RETURNED"
 ] as const;
 export const itemStatusSchema = z.enum(ITEM_STATUSES);
 
