@@ -35,7 +35,13 @@ export class CustodyEngine {
     const existingEntry = existingEntries[0];
 
     if (existingEntry) {
-      const newUnits = Math.max(0, existingEntry.units + delta);
+      const nextUnits = existingEntry.units + delta;
+      if (nextUnits < 0) {
+        throw new Error(
+          `Custody moving-inventory underflow: technician "${technicianId}" / item type "${itemTypeId}" would become ${nextUnits}.`
+        );
+      }
+      const newUnits = nextUnits;
       await tx
         .update(technicianMovingInventoryEntries)
         .set({
