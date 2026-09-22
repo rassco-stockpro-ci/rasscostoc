@@ -78,6 +78,57 @@ describe("SerialRecognitionService — Central Serial Engine", () => {
       expect(candidates[0]).toBe(fixed);
     });
 
+    it("does not create duplicate enterprise item types when production casing differs", async () => {
+      const tx: any = {
+        select: vi.fn().mockReturnThis(),
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([
+          {
+            id: "A960",
+            nameAr: "A960",
+            nameEn: "PAX A960",
+            category: "devices",
+            isActive: true,
+            requiresSerial: true,
+            serialPrefix: null,
+            serialLength: 10,
+            serialRegex: "^[0-9]{10}$",
+          },
+          {
+            id: "I9100",
+            nameAr: "I9100",
+            nameEn: "I9100",
+            category: "devices",
+            isActive: true,
+            requiresSerial: true,
+            serialPrefix: "SAW",
+            serialLength: 14,
+            serialRegex: "^SAW[0-9]{11}$",
+          },
+          {
+            id: "I9000S",
+            nameAr: "I9000S",
+            nameEn: "I9000S",
+            category: "devices",
+            isActive: true,
+            requiresSerial: true,
+            serialPrefix: "SAS",
+            serialLength: 14,
+            serialRegex: "^SAS[0-9]{11}$",
+          },
+        ]),
+        insert: vi.fn(() => ({
+          values: vi.fn(() => ({
+            onConflictDoNothing: vi.fn(),
+          })),
+        })),
+      };
+
+      const result = await SerialRecognitionService.recognize("1234567890", "a960", tx);
+      expect(result.itemTypeId).toBe("A960");
+      expect(tx.insert).not.toHaveBeenCalled();
+    });
+
     it("keeps numeric SIM prefix (89966) in stored candidate", async () => {
       const iccid = "8996606099020521804";
       const tx = {
