@@ -71,6 +71,9 @@ const DB_DEPENDENT_TEST_FILES = [
   // OPS-REMED-E4-P4-I1.R1/I2: new DB-dependent test files added this gate.
   "apps/api/src/modules/courier/infrastructure/migration-p4-constraint.smoke.test.ts",
   "apps/api/src/modules/courier/infrastructure/custody-closure-production-writers.test.ts",
+  "apps/api/src/core/idempotency/idempotency.service.integration.test.ts",
+  "apps/api/src/modules/inventory/infrastructure/services/custody-engine.moving-inventory-concurrency.integration.test.ts",
+  "apps/api/src/modules/courier/infrastructure/save-execution-custody-atomicity.integration.test.ts",
   // OPS-PERM-S0-B0.I1: registerCourierRoutes()'s composition wiring requires
   // DATABASE_URL to construct even though these tests never query it.
   "apps/api/src/modules/courier/presentation/routes/courier-global-delete-admin-only.routes.test.ts",
