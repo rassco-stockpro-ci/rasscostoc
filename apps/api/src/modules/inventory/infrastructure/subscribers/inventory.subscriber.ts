@@ -8,7 +8,7 @@
 import { EventBus } from "@core/events/event-bus";
 import { ExecutionCompletedEvent, InventoryDeductionFailedEvent } from "@core/events/events";
 import { createInventoryEngine, updateCustodyClosureStatus } from "../../../courier/contracts";
-import { idempotencyService } from "@core/idempotency/idempotency.service";
+import { idempotencyService, IdempotencyInProgressError } from "@core/idempotency/idempotency.service";
 import { tracer } from "@core/telemetry/tracer";
 import { db } from "@core/config/db";
 import { courierRequestItems } from "@shared/schema";
@@ -195,6 +195,15 @@ export class InventorySubscriber {
               await updateCustodyClosureStatus(requestId, ["PROCESSING"], "CLOSED_SUCCESS");
               return { success: true };
             } catch (err: any) {
+              // A concurrent duplicate delivery that loses the idempotency
+              // claim is NOT a deduction failure. Do not mutate custody state
+              // or publish InventoryDeductionFailedEvent; let the OutboxWorker
+              // retry the duplicate delivery while the winning attempt remains
+              // authoritative in PROCESSING.
+              if (err instanceof IdempotencyInProgressError || err?.code === "IDEMPOTENCY_IN_PROGRESS") {
+                throw err;
+              }
+
               console.error(
                 `[InventorySubscriber] Critical error during inventory deduction:`,
                 err
