@@ -9,15 +9,32 @@ import { eq } from "drizzle-orm";
 import { db } from "@core/config/db";
 import { users, courierRequests, courierExecutions, inventoryDeductionCompletions } from "@shared/schema";
 import { CourierProjectionWorker } from "./CourierProjectionWorker";
+import { resetTestDatabase } from "@core/testing/foundation/db.helpers";
 
 describe("OPS-REMED-E4-P2 — CourierProjectionWorker", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     if (!process.env.DATABASE_URL?.includes("test")) {
       throw new Error(
         "Refusing to run: DATABASE_URL does not look like an isolated test database " +
           "(must contain 'test' in the database name). See scripts/test-database.mjs."
       );
     }
+    // test-isolation fix: inventory_deduction_completions.request_id has no FK
+    // to courier_requests (deliberately — see
+    // migrations/0050_inventory_deduction_completions_add.sql), so a row this
+    // table's OWN tests (or courier-audit-dedup.test.ts) leave behind is never
+    // cleaned up by anything, and can later collide with a freshly-generated
+    // courier_requests.id via inventory_deduction_completions_request_id_unique.
+    // Truncate only this orphan-prone table — deliberately NOT courier_requests/
+    // courier_executions: RESTART IDENTITY on those makes the serial sequence
+    // restart at 1 in this file, which then collides with IdempotencyService's
+    // request-id-keyed dedup records (format "Event:REQ-{id}:Subscriber:vN",
+    // itself not reset by any table truncation) whenever this file runs
+    // immediately after another file using the same low ids — confirmed by
+    // running this file back-to-back with courier-audit-dedup.test.ts. Letting
+    // the sequence climb monotonically (its normal behavior across the rest of
+    // the suite) avoids that entirely.
+    await resetTestDatabase(["inventory_deduction_completions"]);
   });
 
   async function seedRow(closureStatus: string): Promise<{ requestId: number; completionId: string }> {
