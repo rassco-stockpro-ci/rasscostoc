@@ -103,5 +103,64 @@ describe("Governance — custody moving-inventory concurrency", () => {
     expect(itemB?.status).toBe("RECEIVED_BY_TECHNICIAN");
     expect(itemA?.currentOwnerId).toBe(technicianId);
     expect(itemB?.currentOwnerId).toBe(technicianId);
+  it("fails closed and rolls back delivery when moving-inventory would underflow", async () => {
+    const serial = `ZZ${randomUUID().replace(/-/g, "").slice(0, 10)}`.toUpperCase();
+    const itemId = randomUUID();
+    itemIds.push(itemId);
+
+    await db.insert(items).values({
+      id: itemId,
+      itemTypeId,
+      serialNumber: serial,
+      barcode: serial,
+      status: "RECEIVED_BY_TECHNICIAN",
+      currentOwnerId: technicianId,
+    });
+
+    const [existingMoving] = await db
+      .select()
+      .from(technicianMovingInventoryEntries)
+      .where(
+        and(
+          eq(technicianMovingInventoryEntries.technicianId, technicianId),
+          eq(technicianMovingInventoryEntries.itemTypeId, itemTypeId)
+        )
+      );
+    if (existingMoving) {
+      await db.update(technicianMovingInventoryEntries)
+        .set({ units: 0 })
+        .where(eq(technicianMovingInventoryEntries.id, existingMoving.id));
+    } else {
+      await db.insert(technicianMovingInventoryEntries).values({
+        technicianId,
+        itemTypeId,
+        units: 0,
+        boxes: 0,
+      });
+    }
+
+    await expect(
+      db.transaction((tx) =>
+        CustodyEngine.deliverItem(
+          itemId,
+          "GOV-UNDERFLOW",
+          technicianId,
+          technicianId,
+          tx
+        )
+      )
+    ).rejects.toThrow(/underflow/i);
+
+    const [item] = await db.select().from(items).where(eq(items.id, itemId));
+    expect(item?.status).toBe("RECEIVED_BY_TECHNICIAN");
+    expect(item?.currentOwnerId).toBe(technicianId);
+
+    const txRows = await db
+      .select()
+      .from(inventoryTransactions)
+      .where(eq(inventoryTransactions.itemId, itemId));
+    expect(txRows).toHaveLength(0);
+  });
+
   });
 });
