@@ -214,6 +214,14 @@ export class CustodyEngine {
       throw new Error("الجهاز غير موجود بقواعد البيانات");
     }
 
+    // The locked row is authoritative. If a technician currently owns
+    // the asset, return must still match that owner; otherwise a stale
+    // caller could return another technician-owned asset after the row
+    // changed between the outer read and this transaction.
+    if (item.currentOwnerId && item.currentOwnerId !== technicianId) {
+      throw new Error("الجهاز المطلوب إرجاعه ليس في عهدة هذا الفني حالياً");
+    }
+
     // 1. تحديث حالة وموقع الصنف
     await tx
       .update(items)
