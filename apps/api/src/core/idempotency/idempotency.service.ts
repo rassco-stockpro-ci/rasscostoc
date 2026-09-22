@@ -1,6 +1,6 @@
 import { db } from "../config/db";
 import { idempotencyRecords } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { metrics } from "../telemetry/metrics";
 
 /**
@@ -124,6 +124,9 @@ export class IdempotencyService {
     try {
       const result = await action();
 
+      // Fenced terminal write: only the event that currently owns
+      // PROCESSING may publish COMPLETED. A stale attempt whose lease was
+      // reclaimed cannot overwrite the newer owner.
       await db
         .update(idempotencyRecords)
         .set({
@@ -131,12 +134,20 @@ export class IdempotencyService {
           responsePayload: result !== undefined ? result : null,
           completedAt: new Date(),
         })
-        .where(eq(idempotencyRecords.idempotencyKey, idempotencyKey));
+        .where(
+          and(
+            eq(idempotencyRecords.idempotencyKey, idempotencyKey),
+            eq(idempotencyRecords.eventId, eventId),
+            eq(idempotencyRecords.status, "PROCESSING")
+          )
+        );
 
       return result;
     } catch (err: any) {
       const errorMsg = err.message || String(err);
 
+      // Same fencing rule for failure: a superseded/stale attempt
+      // must not move a newer owner's PROCESSING record back to FAILED.
       await db
         .update(idempotencyRecords)
         .set({
@@ -144,7 +155,13 @@ export class IdempotencyService {
           responsePayload: { error: errorMsg },
           completedAt: new Date(),
         })
-        .where(eq(idempotencyRecords.idempotencyKey, idempotencyKey));
+        .where(
+          and(
+            eq(idempotencyRecords.idempotencyKey, idempotencyKey),
+            eq(idempotencyRecords.eventId, eventId),
+            eq(idempotencyRecords.status, "PROCESSING")
+          )
+        );
 
       throw err;
     }
