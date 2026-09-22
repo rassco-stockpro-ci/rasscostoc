@@ -25,6 +25,7 @@ import {
   inventoryTransactions,
   itemHistoryLogs,
   custodyMovements,
+  inventoryDeductionCompletions,
 } from "@shared/schema";
 import { EventBus } from "@core/events/event-bus";
 import { ExecutionCompletedEvent, InventoryDeductionFailedEvent } from "@core/events/events";
@@ -208,6 +209,16 @@ describe("OPS-REMED-E3-F.R1 — real production chain (OutboxWorker → Inventor
 
   afterEach(async () => {
     await db.delete(outboxEvents);
+    await db
+      .delete(inventoryDeductionCompletions)
+      .where(eq(inventoryDeductionCompletions.requestId, 940001))
+      .catch(() => {});
+    for (const requestId of [940002, 940003, 940004, 940005, 940006]) {
+      await db
+        .delete(inventoryDeductionCompletions)
+        .where(eq(inventoryDeductionCompletions.requestId, requestId))
+        .catch(() => {});
+    }
     // Unconditional (not "only on success") — a test that fails at an
     // assertion never reaches its own inline cleanup call, and a leftover
     // COMPLETED/FAILED idempotency row from a PRIOR failed run for the
@@ -217,7 +228,7 @@ describe("OPS-REMED-E3-F.R1 — real production chain (OutboxWorker → Inventor
     // developing these tests (stale COMPLETED row from a previous failed
     // run masked a genuine re-run). Deleting every known scenario's key
     // here, every time, regardless of pass/fail, closes that gap.
-    for (const requestId of [940001, 940002, 940003, 940004, 940005]) {
+    for (const requestId of [940001, 940002, 940003, 940004, 940005, 940006]) {
       await db
         .delete(idempotencyRecords)
         .where(eq(idempotencyRecords.idempotencyKey, `ExecutionCompletedEvent:REQ-${requestId}:InventorySubscriber:v1`))
@@ -277,6 +288,33 @@ describe("OPS-REMED-E3-F.R1 — real production chain (OutboxWorker → Inventor
     return itemId;
   }
 
+  async function seedN950ItemInCustody(ownerId: string, serialNumber: string) {
+    const itemTypeId = randomUUID();
+    await db.insert(itemTypes).values({
+      id: itemTypeId,
+      nameAr: "N950 Test",
+      nameEn: "N950 Test",
+      category: "device",
+      requiresSerial: true,
+      serialPrefix: "NCC,NCD",
+      serialLength: 12,
+      serialRegex: "^(NCC|NCD)[0-9]{9}$",
+    });
+    createdItemTypeIds.push(itemTypeId);
+
+    const itemId = randomUUID();
+    await db.insert(items).values({
+      id: itemId,
+      itemTypeId,
+      serialNumber,
+      barcode: serialNumber,
+      status: "RECEIVED_BY_TECHNICIAN",
+      currentOwnerId: ownerId,
+    });
+    createdItemIds.push(itemId);
+    return itemId;
+  }
+
   function buildEvent(requestId: number, tech: string, serial: string) {
     return new ExecutionCompletedEvent({
       requestId,
@@ -305,6 +343,40 @@ describe("OPS-REMED-E3-F.R1 — real production chain (OutboxWorker → Inventor
     const key = `${eventName}:REQ-${requestId}:InventorySubscriber:v${version}`;
     await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, key)).catch(() => {});
   }
+
+  it(
+    "N950 regression: canonical prefixed serial survives Subscriber candidate handling and deducts through the real production chain",
+    async () => {
+      const tech = await seedTechnician("n950-canonical");
+      const requestId = 940006;
+      const serial = "NCD100253066";
+      const itemId = await seedN950ItemInCustody(tech, serial);
+
+      const event = buildEvent(requestId, tech, serial);
+      await outboxRepository.enqueue(event);
+
+      const worker = new OutboxWorker({ intervalMs: 60000, batchSize: 5 });
+      await worker.runOnce();
+
+      const [outboxRow] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, event.id));
+      expect(outboxRow!.status).toBe("PUBLISHED");
+
+      const [item] = await db.select().from(items).where(eq(items.id, itemId));
+      expect(item!.status).toBe("DELIVERED");
+
+      const txRows = await db
+        .select()
+        .from(inventoryTransactions)
+        .where(eq(inventoryTransactions.itemId, itemId));
+      const historyRows = await db
+        .select()
+        .from(itemHistoryLogs)
+        .where(eq(itemHistoryLogs.itemId, itemId));
+      expect(txRows).toHaveLength(1);
+      expect(historyRows).toHaveLength(1);
+    },
+    30000
+  );
 
   it(
     "A. successful real-chain delivery: OutboxWorker → real subscriber → real engine deducts atomically, outbox PUBLISHED, idempotency COMPLETED, exactly one write set",
