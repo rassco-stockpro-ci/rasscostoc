@@ -12,7 +12,7 @@ import { db } from "../config/db";
 import { idempotencyRecords } from "@shared/schema";
 import { idempotencyService } from "./idempotency.service";
 
-describe("Governance — Idempotency atomic claim and stale recovery", () => {
+describe("Governance — Idempotency atomic claim and evidence recovery", () => {
   const keys: string[] = [];
 
   beforeAll(() => {
@@ -77,8 +77,8 @@ describe("Governance — Idempotency atomic claim and stale recovery", () => {
     expect(actionCalls).toBe(1);
   });
 
-  it("reclaims a stale PROCESSING record and completes the logical operation", async () => {
-    const key = `GOV-IDEM-STALE-${randomUUID()}`;
+  it("does not reclaim a PROCESSING record merely because it is old", async () => {
+    const key = `GOV-IDEM-NO-STALE-RECLAIM-${randomUUID()}`;
     keys.push(key);
 
     await db.insert(idempotencyRecords).values({
@@ -98,12 +98,32 @@ describe("Governance — Idempotency atomic claim and stale recovery", () => {
         "GovernanceTest",
         async () => {
           calls += 1;
-          return { recovered: true };
+          return { shouldNotRun: true };
         }
       )
-    ).resolves.toEqual({ recovered: true });
+    ).rejects.toThrow(/currently PROCESSING/);
 
-    expect(calls).toBe(1);
+    expect(calls).toBe(0);
+  });
+
+  it("allows evidence-driven completion of an owned PROCESSING record", async () => {
+    const key = `GOV-IDEM-EVIDENCE-${randomUUID()}`;
+    const eventId = randomUUID();
+    keys.push(key);
+
+    await db.insert(idempotencyRecords).values({
+      idempotencyKey: key,
+      eventId,
+      subscriberName: "GovernanceTest",
+      status: "PROCESSING",
+    });
+
+    await expect(
+      idempotencyService.completeIfProcessing(key, eventId, {
+        success: true,
+        recoveredFromDurableCompletion: true,
+      })
+    ).resolves.toBe(true);
 
     const [row] = await db
       .select()
@@ -111,6 +131,11 @@ describe("Governance — Idempotency atomic claim and stale recovery", () => {
       .where(eq(idempotencyRecords.idempotencyKey, key));
 
     expect(row?.status).toBe("COMPLETED");
-    expect(row?.completedAt).toBeTruthy();
+    expect(row?.responsePayload).toEqual({
+      success: true,
+      recoveredFromDurableCompletion: true,
+    });
+  });
+
   });
 });
