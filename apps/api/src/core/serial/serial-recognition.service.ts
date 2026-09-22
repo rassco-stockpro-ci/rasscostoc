@@ -100,28 +100,38 @@ export class SerialRecognitionService {
 
     if (!cleaned) return [];
 
+    // Candidate contract: when the Central Serial Engine can recognize the input,
+    // its canonical storage form MUST be the first candidate. Consumers that
+    // need one representative value must use this first candidate rather than
+    // selecting by length or another heuristic (which can turn NCD123… into
+    // its stripped legacy form 123…).
+    let canonicalSerial: string | null = null;
+
+    try {
+      const recognition = await this.recognize(rawBarcode, hintItemTypeId, txClient);
+      canonicalSerial = recognition.normalizedSerial;
+    } catch {
+      // Soft path: still strip known prefixes even when full validation fails.
+      // Retry recognition with OCR-corrected ICCID when raw was 99966…
+      for (const typoFix of this.expandSaudiIccidTypoCandidates(cleaned)) {
+        try {
+          const recognition = await this.recognize(typoFix, hintItemTypeId, txClient);
+          canonicalSerial = recognition.normalizedSerial;
+          break;
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (canonicalSerial) candidates.add(canonicalSerial);
+
     candidates.add(cleaned);
     const trimmed = rawBarcode.trim();
     if (trimmed) candidates.add(trimmed.toUpperCase());
 
     for (const typoFix of this.expandSaudiIccidTypoCandidates(cleaned)) {
       candidates.add(typoFix);
-    }
-
-    try {
-      const recognition = await this.recognize(rawBarcode, hintItemTypeId, txClient);
-      candidates.add(recognition.normalizedSerial);
-    } catch {
-      // Soft path: still strip known alphabetic prefixes even if full validation fails
-      // Retry recognize with OCR-corrected ICCID when raw was 99966…
-      for (const typoFix of this.expandSaudiIccidTypoCandidates(cleaned)) {
-        try {
-          const recognition = await this.recognize(typoFix, hintItemTypeId, txClient);
-          candidates.add(recognition.normalizedSerial);
-        } catch {
-          // ignore
-        }
-      }
     }
 
     const allTypes = await txClient
