@@ -47,6 +47,35 @@ describe("SerialRecognitionService — Central Serial Engine", () => {
 
       expect(candidates).toContain("NCD100253066");
       expect(candidates).toContain("100253066");
+      // Regression: the canonical Central Serial Engine representation must
+      // be first so downstream callers never select a legacy stripped form
+      // by a secondary heuristic such as shortest-string selection.
+      expect(candidates[0]).toBe("NCD100253066");
+    });
+
+    it("puts the OCR-corrected Saudi ICCID canonical form first", async () => {
+      const typo = "9996606099020521896";
+      const fixed = "8996606099020521896";
+      const tx = {
+        select: vi.fn().mockReturnThis(),
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([
+          {
+            id: "lebaraSim",
+            nameAr: "شرائح ليبارا",
+            nameEn: "libar1",
+            category: "sim",
+            isActive: true,
+            requiresSerial: true,
+            serialPrefix: "89966",
+            serialLength: 19,
+            serialRegex: "^89966[0-9]{14}$",
+          },
+        ]),
+      };
+
+      const candidates = await SerialRecognitionService.buildStoredSerialCandidates(typo, undefined, tx);
+      expect(candidates[0]).toBe(fixed);
     });
 
     it("keeps numeric SIM prefix (89966) in stored candidate", async () => {
