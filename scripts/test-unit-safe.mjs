@@ -35,6 +35,7 @@ const DB_DEPENDENT_TEST_FILES = [
   "apps/api/src/core/outbox/outbox-drain.p3.test.ts",
   "apps/api/src/core/outbox/outbox.test.ts",
   "apps/api/src/core/testing/multi-instance.p4.test.ts",
+  "apps/api/src/core/middlewares/requireCatalogedPermission.integration.test.ts",
   "apps/api/src/modules/accounting/infrastructure/number-sequences.p21.test.ts",
   "apps/api/src/modules/accounting/infrastructure/technician-sales-metrics.p22.test.ts",
   "apps/api/src/modules/accounting/infrastructure/round2ActivePaths.p_dbR10c1.test.ts",

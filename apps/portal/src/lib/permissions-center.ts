@@ -151,8 +151,11 @@ export interface RealUncatalogedPage {
  * warehouse.transfers already govern it; "courier" is a real cataloged capability
  * (courier.requests) but is not treated as "locked" here because its own route is itself hard
  * role-gated to admin-only in App.tsx — a Supervisor can never reach /courier through navigation
- * regardless of any grant, a distinct gap reported separately from "not governed". */
-const CATALOG_GOVERNED_NAV_IDS = new Set(["warehouses", "courier"]);
+ * regardless of any grant, a distinct gap reported separately from "not governed". "logs" because
+ * system.auditLogs:view now governs it (OPS-PERM-S2) — GET /api/system-logs is no longer
+ * requireAuth-only; it is restricted to admin+supervisor and, for supervisor, gated through the
+ * Permission Engine. */
+const CATALOG_GOVERNED_NAV_IDS = new Set(["warehouses", "courier", "logs"]);
 
 /** Nav ids with a PROVEN, isolated, admin-only backend policy — never governed by this Permission
  * Engine and never intended to be: accounting's admin-only default-deny is enforced independently

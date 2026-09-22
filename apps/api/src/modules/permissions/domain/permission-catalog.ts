@@ -35,6 +35,12 @@ export const PERMISSION_CATALOG: readonly PermissionKey[] = [
   { page: "warehouse.transfers", action: "approve" },
   { page: "warehouse.transfers", action: "transfer" },
   { page: "reports.operational", action: "view" },
+  // OPS-PERM-S2: newly cataloged. GET /api/system-logs previously had no role
+  // restriction at all (any authenticated role, including technician/viewer,
+  // could read the full audit log) — this closes that gap for supervisor via
+  // the Permission Engine, and separately (at the route) restricts the page
+  // to admin+supervisor only, matching its existing frontend nav visibility.
+  { page: "system.auditLogs", action: "view" },
 ] as const;
 
 function key(page: string, action: string): string {
@@ -67,6 +73,7 @@ export const ROLE_HARD_CEILING: Readonly<Record<Exclude<ActorRole, "admin">, { g
       key("warehouse.transfers", "approve"),
       key("warehouse.transfers", "transfer"),
       key("reports.operational", "view"),
+      key("system.auditLogs", "view"),
     ]),
     scope: "REGION",
   },
@@ -105,6 +112,11 @@ export const DEFAULT_ROLE_TEMPLATE: Readonly<Record<Exclude<ActorRole, "admin">,
     key("courier.requests", "update"),
     key("warehouse.inventory", "view"),
     key("warehouse.transfers", "view"),
+    // OPS-PERM-S2: in the default template (not just the ceiling) because every
+    // existing supervisor already has de facto access today (GET /api/system-logs
+    // was requireAuth-only) — putting it here keeps enforcement a no-op for
+    // existing accounts rather than requiring a backfill for this one.
+    key("system.auditLogs", "view"),
   ]),
   courier_supervisor: new Set([key("courier.requests", "view"), key("courier.requests", "update")]),
   warehouse: new Set([key("warehouse.inventory", "view"), key("warehouse.inventory", "update"), key("warehouse.transfers", "view")]),

@@ -35,6 +35,7 @@
     "db:drift-check": "node scripts/erp008-drift-check.mjs",
     "db:backup-drill": "node scripts/erp008-backup-drill.mjs",
     "db:item-types:constraints": "tsx scripts/apply-item-types-constraints.ts",
+    "ops-perm:s2:backfill": "tsx scripts/ops-perm-s2-backfill-supervisor-grants.ts",
     "smoke:api": "node scripts/smoke-api.cjs",
     "smoke:erp003": "node scripts/erp003-postdeploy-verify.mjs",
     "prepare": "husky",

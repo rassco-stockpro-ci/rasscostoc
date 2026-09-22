@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { requireAuth } from "@core/middlewares/auth.middleware";
+import { requireCatalogedPermission } from "@core/middlewares/requireCatalogedPermission.middleware";
 import { inventoryContainer } from "@server/composition/inventory.container";
 import { normalizeCreateWarehouseTransferPayload } from "@modules/inventory/application/inventory/use-cases/WarehouseTransferOperations.use-case";
 
@@ -12,7 +13,10 @@ export function registerWarehouseTransferOperationsRoutes(app: Express): void {
   const controller = inventoryContainer.warehouseTransferController;
 
   // عرض جميع المناقلات
-  app.get("/api/warehouse-transfers", requireAuth, async (req, res) => {
+  // OPS-PERM-S2: real Permission Engine enforcement for "warehouse.transfers:view" —
+  // supervisor-role only; admin/technician keep their existing access unchanged (see
+  // requireCatalogedPermission's own doc comment).
+  app.get("/api/warehouse-transfers", requireAuth, requireCatalogedPermission("warehouse.transfers", "view"), async (req, res) => {
     try {
       const user = req.user!;
       const filters = user.role === 'admin' || user.role === 'supervisor'

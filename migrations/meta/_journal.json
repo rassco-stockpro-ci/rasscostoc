@@ -414,6 +414,13 @@
       "when": 1787840000000,
       "tag": "0058_users_refresh_tokens_auth_generation_add",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1787840001000,
+      "tag": "0059_permission_engine_foundation_add",
+      "breakpoints": true
     }
   ]
 }

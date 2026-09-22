@@ -200,7 +200,8 @@
       "courier_requests": "Delivery/courier request records",
       "warehouse_inventory": "Warehouse stock levels",
       "warehouse_transfers": "Stock transfer operations between warehouses",
-      "reports_operational": "Operational reporting"
+      "reports_operational": "Operational reporting",
+      "system_auditLogs": "System-wide activity and audit log"
     },
     "table": {
       "page": "Page",
@@ -258,7 +259,8 @@
       "courier_requests": "Courier Requests",
       "warehouse_inventory": "Warehouse Inventory",
       "warehouse_transfers": "Warehouse Transfers",
-      "reports_operational": "Operational Reports"
+      "reports_operational": "Operational Reports",
+      "system_auditLogs": "System Audit Logs"
     },
     "actions": {
       "view": "View",

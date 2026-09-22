@@ -14,15 +14,35 @@ import { users, courierRequests, courierExecutions, courierExecutionAuditDedup, 
 import { EventBus } from "@core/events/event-bus";
 import { InventoryDeductionFailedEvent } from "@core/events/events";
 import { CourierSagaSubscriber } from "./subscribers/courier-saga.subscriber";
+import { resetTestDatabase } from "@core/testing/foundation/db.helpers";
 
 describe("OPS-REMED-E4-P2 — CourierSagaSubscriber atomic final-failure/correction", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     if (!process.env.DATABASE_URL?.includes("test")) {
       throw new Error(
         "Refusing to run: DATABASE_URL does not look like an isolated test database " +
           "(must contain 'test' in the database name). See scripts/test-database.mjs."
       );
     }
+    // test-isolation fix: this file inserts inventory_deduction_completions rows
+    // tied to real, low, serial-generated courier_requests.id values and never
+    // cleaned them up. inventory_deduction_completions has no FK to
+    // courier_requests (migrations/0050_inventory_deduction_completions_add.sql
+    // — deliberately: "no other table touched"), so TRUNCATE ... CASCADE
+    // elsewhere never removes them; a later file's courier_requests sequence
+    // reset then collides with these permanently-orphaned rows on
+    // inventory_deduction_completions_request_id_unique. Truncate only this
+    // orphan-prone table — deliberately NOT courier_requests/courier_executions:
+    // RESTART IDENTITY on those makes the serial sequence restart at 1 in this
+    // file, which then collides with IdempotencyService's request-id-keyed
+    // dedup records (format "Event:REQ-{id}:Subscriber:vN", itself not reset by
+    // any table truncation) whenever this file runs immediately after another
+    // file using the same low ids — confirmed by running this file back-to-back
+    // with CourierProjectionWorker.test.ts. Letting the sequence climb
+    // monotonically (its normal behavior across the rest of the suite) avoids
+    // that entirely, and this file's own assertions key off its own
+    // freshly-generated requestId regardless, so no other cleanup is needed.
+    await resetTestDatabase(["inventory_deduction_completions"]);
     CourierSagaSubscriber.register();
   });
 
