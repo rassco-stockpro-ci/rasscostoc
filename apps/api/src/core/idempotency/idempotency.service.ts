@@ -21,18 +21,6 @@ export class IdempotencyInProgressError extends Error {
 
 export class IdempotencyService {
   /**
-   * Atomically claims an idempotency key before executing the business action.
-   *
-   * Contract:
-   * - COMPLETED: return cached response; never execute the action.
-   * - PROCESSING: reject concurrent duplicate execution.
-   * - FAILED: reset to PROCESSING and execute.
-   * - missing: create PROCESSING atomically and execute.
-   *
-   * PROCESSING crash recovery is deliberately not generic; a business owner
-   * must first prove its durable side effect and then call completeIfProcessing().
-   */
-  /**
    * Evidence-driven recovery primitive. A caller may mark PROCESSING as
    * COMPLETED only after it independently proves that the business effect
    * committed durably. The row lock and causal event-id check prevent a
@@ -75,6 +63,18 @@ export class IdempotencyService {
     });
   }
 
+  /**
+   * Atomically claims an idempotency key before executing the business action.
+   *
+   * Contract:
+   * - COMPLETED: return cached response; never execute the action.
+   * - PROCESSING: reject concurrent duplicate execution.
+   * - FAILED: reset to PROCESSING and execute.
+   * - missing: create PROCESSING atomically and execute.
+   *
+   * PROCESSING crash recovery is deliberately not generic; a business owner
+   * must first prove its durable side effect and then call completeIfProcessing().
+   */
   async execute<T = any>(
     idempotencyKey: string,
     eventId: string,
@@ -106,7 +106,7 @@ export class IdempotencyService {
       }
 
       // Serialize all existing-key decisions. This closes the concurrent
-      // FAILED/stale-PROCESSING read→update race.
+      // FAILED read→update race.
       const [existing] = await tx
         .select()
         .from(idempotencyRecords)
