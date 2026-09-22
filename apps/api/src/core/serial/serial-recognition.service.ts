@@ -221,9 +221,13 @@ export class SerialRecognitionService {
       .where(eq(itemTypes.isActive, true));
 
     // Ensure enterprise device types exist in DB automatically with correct specifications
-    const hasA960 = allTypes.some((t: any) => t.id === 'a960');
-    const hasI9100 = allTypes.some((t: any) => t.id === 'i9100');
-    const hasI9000s = allTypes.some((t: any) => t.id === 'i9000s');
+    // Item-type IDs are business identifiers, not case-sensitive database
+    // values. Production already contains the legacy uppercase A960 row;
+    // treat equivalent casing as the same type so recognition never creates
+    // a duplicate lowercase record as a side effect of lookup.
+    const hasA960 = allTypes.some((t: any) => String(t.id).toLowerCase() === 'a960');
+    const hasI9100 = allTypes.some((t: any) => String(t.id).toLowerCase() === 'i9100');
+    const hasI9000s = allTypes.some((t: any) => String(t.id).toLowerCase() === 'i9000s');
 
     if (!hasA960 || !hasI9100 || !hasI9000s) {
       try {
