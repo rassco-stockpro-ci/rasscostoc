@@ -15,6 +15,15 @@ import { metrics } from "../telemetry/metrics";
  */
 const PROCESSING_STALE_AFTER_MS = 30 * 60 * 1000;
 
+export class IdempotencyInProgressError extends Error {
+  readonly code = "IDEMPOTENCY_IN_PROGRESS";
+
+  constructor(idempotencyKey: string) {
+    super(`Idempotency key ${idempotencyKey} is currently PROCESSING.`);
+    this.name = "IdempotencyInProgressError";
+  }
+}
+
 export class IdempotencyService {
   /**
    * Atomically claims an idempotency key before executing the business action.
@@ -86,7 +95,7 @@ export class IdempotencyService {
           Date.now() - startedAtMs >= PROCESSING_STALE_AFTER_MS;
 
         if (!stale) {
-          throw new Error(`Idempotency key ${idempotencyKey} is currently PROCESSING.`);
+          throw new IdempotencyInProgressError(idempotencyKey);
         }
       }
 
