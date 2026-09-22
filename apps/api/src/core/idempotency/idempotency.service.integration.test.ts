@@ -136,6 +136,4 @@ describe("Governance — Idempotency atomic claim and evidence recovery", () => 
       recoveredFromDurableCompletion: true,
     });
   });
-
-  });
 });
