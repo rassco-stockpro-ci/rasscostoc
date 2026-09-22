@@ -12,7 +12,7 @@ import { idempotencyService, IdempotencyInProgressError } from "@core/idempotenc
 import { tracer } from "@core/telemetry/tracer";
 import { db } from "@core/config/db";
 import { courierRequestItems, inventoryDeductionCompletions } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
 
 export class InventorySubscriber {
@@ -195,40 +195,6 @@ export class InventorySubscriber {
               await updateCustodyClosureStatus(requestId, ["PROCESSING"], "CLOSED_SUCCESS");
               return { success: true };
             } catch (err: any) {
-              // A concurrent duplicate delivery that loses the idempotency
-              // claim is NOT a deduction failure. Do not mutate custody state
-              // or publish InventoryDeductionFailedEvent; let the OutboxWorker
-              // retry the duplicate delivery while the winning attempt remains
-              // authoritative in PROCESSING.
-              if (err instanceof IdempotencyInProgressError || err?.code === "IDEMPOTENCY_IN_PROGRESS") {
-                // Crash window: the business transaction may already have
-                // committed while the idempotency row remained PROCESSING.
-                // Recovery is allowed only when the same outbox event has a
-                // durable completion-evidence row. Without evidence, leave
-                // PROCESSING untouched and let the outbox retry later.
-                const [completion] = await db
-                  .select({ id: inventoryDeductionCompletions.id })
-                  .from(inventoryDeductionCompletions)
-                  .where(
-                    and(
-                      eq(inventoryDeductionCompletions.requestId, requestId),
-                      eq(inventoryDeductionCompletions.sourceEventId, event.id)
-                    )
-                  )
-                  .limit(1);
-
-                if (completion) {
-                  await idempotencyService.completeIfProcessing(
-                    idempotencyKey,
-                    event.id,
-                    { success: true, recoveredFromDurableCompletion: true }
-                  );
-                  return;
-                }
-
-                throw err;
-              }
-
               console.error(
                 `[InventorySubscriber] Critical error during inventory deduction:`,
                 err
@@ -255,7 +221,41 @@ export class InventorySubscriber {
               span.end();
             }
           }
-        );
+          );
+        } catch (err: any) {
+          // IdempotencyInProgress is a duplicate-claim condition, not a
+          // deduction failure. Never move custody to FAILED_RETRYABLE merely
+          // because another attempt currently owns the idempotency key.
+          if (err instanceof IdempotencyInProgressError || err?.code === "IDEMPOTENCY_IN_PROGRESS") {
+            const [completion] = await db
+              .select({ id: inventoryDeductionCompletions.id })
+              .from(inventoryDeductionCompletions)
+              .where(
+                and(
+                  eq(inventoryDeductionCompletions.requestId, requestId),
+                  eq(inventoryDeductionCompletions.sourceEventId, event.id)
+                )
+              )
+              .limit(1);
+
+            if (completion) {
+              // Durable inventory evidence proves the business transaction
+              // already committed. Close the idempotency record without
+              // executing the deduction again.
+              await idempotencyService.completeIfProcessing(
+                idempotencyKey,
+                event.id,
+                { success: true, recoveredFromDurableCompletion: true }
+              );
+              return;
+            }
+          }
+
+          // Preserve the original claim error so the OutboxWorker can retry
+          // a losing duplicate delivery without creating a false custody
+          // failure event.
+          throw err;
+        }
       }
     );
   }
