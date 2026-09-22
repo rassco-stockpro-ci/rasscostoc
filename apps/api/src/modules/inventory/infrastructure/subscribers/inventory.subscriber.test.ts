@@ -14,8 +14,9 @@
  */
 import { describe, expect, it, afterEach, beforeAll } from "vitest";
 import { randomUUID } from "crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@core/config/db";
+import { idempotencyService, IdempotencyInProgressError } from "@core/idempotency/idempotency.service";
 import {
   users,
   itemTypes,
@@ -117,6 +118,103 @@ describe("OPS-REMED-E3 — InventorySubscriber idempotency regression", () => {
 
     // Cleanup this test's idempotency row so it does not leak into other runs.
     await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, idempotencyKey)).catch(() => {});
+  });
+
+  it("concurrent duplicate while the winning deduction is PROCESSING does not mark custody FAILED_RETRYABLE", async () => {
+    const tech = await seedTechnician("in-progress");
+    const requestId = 910003;
+    const serial = `E3SUBINPROGRESS${randomUUID().slice(0, 8)}`.toUpperCase();
+    const event = new ExecutionCompletedEvent({
+      requestId,
+      actorId: tech,
+      execution: {
+        sn: serial,
+        technicianCode: `e3-sub-in-progress-${tech.slice(0, 8)}`,
+        installationStatus: "Installation Completed - NL",
+      },
+      request: { id: requestId, customerName: "Test Customer", incidentNumber: String(requestId) },
+    });
+    const idempotencyKey = `${event.name}:REQ-${requestId}:InventorySubscriber:v${event.version}`;
+
+    await db.insert(idempotencyRecords).values({
+      idempotencyKey,
+      eventId: event.id,
+      subscriberName: "InventorySubscriber",
+      status: "PROCESSING",
+    });
+    await db.insert(courierExecutions).values({
+      requestId,
+      enteredBy: tech,
+      installationStatus: "Installation Completed - NL",
+      custodyClosureStatus: "PROCESSING",
+    });
+
+    await expect(EventBus.getInstance().publishLocal(event)).rejects.toMatchObject({
+      code: "IDEMPOTENCY_IN_PROGRESS",
+    });
+
+    const [row] = await db
+      .select({ custodyClosureStatus: courierExecutions.custodyClosureStatus })
+      .from(courierExecutions)
+      .where(eq(courierExecutions.requestId, requestId));
+
+    expect(row?.custodyClosureStatus).toBe("PROCESSING");
+
+    const failureEvents = await db
+      .select()
+      .from(outboxEvents)
+      .where(eq(outboxEvents.eventName, "InventoryDeductionFailedEvent"));
+    expect(failureEvents.some((r: any) => r.payload?.requestId === requestId)).toBe(false);
+
+    await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, idempotencyKey)).catch(() => {});
+    await db.delete(courierExecutions).where(eq(courierExecutions.requestId, requestId)).catch(() => {});
+  });
+
+  it("recovers PROCESSING from durable completion evidence without re-running deduction", async () => {
+    const tech = await seedTechnician("evidence-recovery");
+    const requestId = 910004;
+    const serial = `E3SUBRECOVER${randomUUID().slice(0, 8)}`.toUpperCase();
+
+    const event = new ExecutionCompletedEvent({
+      requestId,
+      actorId: tech,
+      execution: {
+        sn: serial,
+        technicianCode: `e3-sub-evidence-${tech.slice(0, 8)}`,
+        installationStatus: "Installation Completed - NL",
+      },
+      request: { id: requestId, customerName: "Test Customer", incidentNumber: String(requestId) },
+    });
+
+    const idempotencyKey = `${event.name}:REQ-${requestId}:InventorySubscriber:v${event.version}`;
+
+    await db.insert(idempotencyRecords).values({
+      idempotencyKey,
+      eventId: event.id,
+      subscriberName: "InventorySubscriber",
+      status: "PROCESSING",
+    });
+
+    await db.insert(inventoryDeductionCompletions).values({
+      id: randomUUID(),
+      requestId,
+      sourceEventId: event.id,
+      generalInventoryDeducted: false,
+      serializedItemCount: 1,
+    });
+
+    await expect(EventBus.getInstance().publishLocal(event)).resolves.toBeUndefined();
+
+    const [idem] = await db
+      .select()
+      .from(idempotencyRecords)
+      .where(eq(idempotencyRecords.idempotencyKey, idempotencyKey));
+
+    expect(idem?.status).toBe("COMPLETED");
+    expect(idem?.responsePayload).toEqual({ success: true, recoveredFromDurableCompletion: true });
+
+    await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, idempotencyKey)).catch(() => {});
+    await db.delete(inventoryDeductionCompletions).where(eq(inventoryDeductionCompletions.requestId, requestId)).catch(() => {});
   });
 
   it("retrying the same idempotency key after FAILED re-runs the action (does not short-circuit to a cached COMPLETED response)", async () => {
