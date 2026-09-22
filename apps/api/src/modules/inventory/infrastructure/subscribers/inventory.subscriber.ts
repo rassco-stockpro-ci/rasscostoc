@@ -60,11 +60,11 @@ export class InventorySubscriber {
           if (!devices.some((d) => d.serialNumber === serial)) {
             devices.push({ serialNumber: serial, model: request.vendorType ?? undefined });
           }
+          // Only the canonical storage representation enters the custody
+          // deduction contract. Legacy/alternate candidates remain an input
+          // lookup concern and must never become separate deduction targets.
           if (!serialsForCustody.includes(serial)) {
             serialsForCustody.push(serial);
-          }
-          for (const c of candidates) {
-            if (!serialsForCustody.includes(c)) serialsForCustody.push(c);
           }
         };
 
