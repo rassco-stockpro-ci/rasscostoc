@@ -134,7 +134,8 @@ export class CustodyEngine {
       .select()
       .from(items)
       .where(eq(items.id, itemId))
-      .limit(1);
+      .limit(1)
+      .for("update");
 
     if (!item) {
       throw new Error("الجهاز غير موجود بقواعد البيانات");
@@ -206,7 +207,8 @@ export class CustodyEngine {
       .select()
       .from(items)
       .where(eq(items.id, itemId))
-      .limit(1);
+      .limit(1)
+      .for("update");
 
     if (!item) {
       throw new Error("الجهاز غير موجود بقواعد البيانات");
