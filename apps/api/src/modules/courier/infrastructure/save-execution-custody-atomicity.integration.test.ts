@@ -11,7 +11,7 @@
 import { describe, expect, it, beforeAll, afterEach } from "vitest";
 import { randomUUID } from "crypto";
 import { and, eq } from "drizzle-orm";
-import { db } from "../../../../core/config/db";
+import { db } from "../../../core/config/db";
 import {
   users,
   itemTypes,
