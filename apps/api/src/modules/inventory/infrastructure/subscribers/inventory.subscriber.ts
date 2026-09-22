@@ -51,8 +51,12 @@ export class InventorySubscriber {
         const addSerial = async (sn?: string | null) => {
           if (!sn?.trim()) return;
           const candidates = await SerialRecognitionService.buildStoredSerialCandidates(sn);
-          const serial =
-            [...candidates].sort((a, b) => a.length - b.length)[0] || sn.trim();
+          // Central Serial Engine contract: candidates[0] is the canonical
+          // storage representation when recognition succeeds. Never choose
+          // by length; prefixed device serials (e.g. NCD/NCC) can have a
+          // shorter legacy stripped representation that is not the
+          // authoritative value used by custody storage.
+          const serial = candidates[0] || sn.trim();
           if (!devices.some((d) => d.serialNumber === serial)) {
             devices.push({ serialNumber: serial, model: request.vendorType ?? undefined });
           }
