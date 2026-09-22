@@ -22,6 +22,7 @@ describe('CustodyEngine Unit Tests', () => {
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue([]),
+      for: vi.fn().mockReturnThis(),
       update: vi.fn().mockReturnThis(),
       set: vi.fn().mockReturnThis(),
       insert: vi.fn().mockReturnThis(),
@@ -139,4 +140,23 @@ describe('CustodyEngine Unit Tests', () => {
       ).rejects.toThrow('الجهاز المطلوب تسليمه ليس في عهدة هذا الفني حالياً');
     });
   });
+  describe('returnItem', () => {
+    it('throws when a stale caller no longer owns the locked item', async () => {
+      const existingItem = {
+        id: 'item-1',
+        serialNumber: 'SN123',
+        currentOwnerId: 'tech-2',
+        status: 'RECEIVED_BY_TECHNICIAN',
+        itemTypeId: 'type-1',
+      };
+      mockTx.limit.mockResolvedValue([existingItem]);
+
+      await expect(
+        CustodyEngine.returnItem('item-1', 'WH-1', 'tech-1', 'admin-1', mockTx)
+      ).rejects.toThrow('الجهاز المطلوب إرجاعه ليس في عهدة هذا الفني حالياً');
+      expect(mockTx.update).not.toHaveBeenCalled();
+      expect(mockTx.insert).not.toHaveBeenCalled();
+    });
+  });
+
 });
