@@ -4,16 +4,11 @@ import { and, eq } from "drizzle-orm";
 import { metrics } from "../telemetry/metrics";
 
 /**
- * A PROCESSING row represents a lease owned by the current execution attempt.
- * If the process dies after the business transaction commits but before the
- * idempotency row becomes COMPLETED, a bounded stale lease must be reclaimable
- * so the logical operation cannot remain blocked forever.
- *
- * The custody/inventory subscriber action is expected to finish well below this
- * window; the conservative threshold minimizes accidental takeover of a genuinely
- * long-running attempt while still providing crash recovery.
+ * PROCESSING is intentionally never reclaimed by age in this generic service.
+ * A timeout alone cannot distinguish a dead worker from a slow live worker and
+ * could run non-idempotent subscriber side effects twice. Business-specific
+ * durable evidence must own crash recovery.
  */
-const PROCESSING_STALE_AFTER_MS = 30 * 60 * 1000;
 
 export class IdempotencyInProgressError extends Error {
   readonly code = "IDEMPOTENCY_IN_PROGRESS";
@@ -30,11 +25,56 @@ export class IdempotencyService {
    *
    * Contract:
    * - COMPLETED: return cached response; never execute the action.
-   * - PROCESSING and fresh: reject concurrent duplicate execution.
-   * - PROCESSING and stale: reclaim exactly once under row lock and execute.
+   * - PROCESSING: reject concurrent duplicate execution.
    * - FAILED: reset to PROCESSING and execute.
    * - missing: create PROCESSING atomically and execute.
+   *
+   * PROCESSING crash recovery is deliberately not generic; a business owner
+   * must first prove its durable side effect and then call completeIfProcessing().
    */
+  /**
+   * Evidence-driven recovery primitive. A caller may mark PROCESSING as
+   * COMPLETED only after it independently proves that the business effect
+   * committed durably. The row lock and causal event-id check prevent a
+   * different attempt from being overwritten.
+   */
+  async completeIfProcessing(
+    idempotencyKey: string,
+    eventId: string,
+    responsePayload: unknown
+  ): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(idempotencyRecords)
+        .where(eq(idempotencyRecords.idempotencyKey, idempotencyKey))
+        .limit(1)
+        .for("update");
+
+      if (!row) return false;
+      if (row.status === "COMPLETED") return true;
+      if (row.status !== "PROCESSING" || row.eventId !== eventId) return false;
+
+      const updated = await tx
+        .update(idempotencyRecords)
+        .set({
+          status: "COMPLETED",
+          responsePayload: responsePayload ?? null,
+          completedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(idempotencyRecords.idempotencyKey, idempotencyKey),
+            eq(idempotencyRecords.eventId, eventId),
+            eq(idempotencyRecords.status, "PROCESSING")
+          )
+        )
+        .returning({ id: idempotencyRecords.id });
+
+      return updated.length === 1;
+    });
+  }
+
   async execute<T = any>(
     idempotencyKey: string,
     eventId: string,
@@ -86,21 +126,10 @@ export class IdempotencyService {
       }
 
       if (existing.status === "PROCESSING") {
-        const startedAtMs =
-          existing.createdAt instanceof Date
-            ? existing.createdAt.getTime()
-            : new Date(existing.createdAt).getTime();
-        const stale =
-          Number.isFinite(startedAtMs) &&
-          Date.now() - startedAtMs >= PROCESSING_STALE_AFTER_MS;
-
-        if (!stale) {
-          throw new IdempotencyInProgressError(idempotencyKey);
-        }
+        throw new IdempotencyInProgressError(idempotencyKey);
       }
 
-      // FAILED or stale PROCESSING: reclaim the key. Clear stale result data
-      // so the eventual COMPLETED response belongs only to this attempt.
+      // FAILED: reset the key for a new delivery attempt.
       await tx
         .update(idempotencyRecords)
         .set({
