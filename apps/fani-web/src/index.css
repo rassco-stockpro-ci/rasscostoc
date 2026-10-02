@@ -136,6 +136,33 @@
   color: #0F172A;
 }
 
+/* Barcode Scanner Input Station */
+.rassco-scan-input {
+  background-color: #F8FAFC;
+  border: 2px solid #E2E8F0;
+}
+
+.rassco-scan-input:focus {
+  background-color: #FFFFFF;
+  border-color: #0F5EA8;
+  box-shadow: 0 0 0 4px rgba(15, 94, 168, 0.12);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
 /* Enterprise Table Custom Scrollbar & Selection */
 .fiori-table-container {
   border-radius: 16px;

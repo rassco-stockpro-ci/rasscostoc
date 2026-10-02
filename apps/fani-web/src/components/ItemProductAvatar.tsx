@@ -1,11 +1,11 @@
 import React from 'react';
-import { 
-  Smartphone, 
-  Cpu, 
-  Printer, 
-  BatteryCharging, 
-  Radio, 
-  CreditCard, 
+import {
+  Smartphone,
+  Cpu,
+  Printer,
+  BatteryCharging,
+  Radio,
+  CreditCard,
   Layers,
   Tag
 } from 'lucide-react';
@@ -128,9 +128,13 @@ export const getItemMetadata = (itemTypeKey: string): ItemMetadata => {
     };
   }
 
+  // itemTypeKey may be an opaque database id (e.g. a UUID) rather than a
+  // readable code — never surface a raw id as the product name.
+  const looksLikeOpaqueId = /^[0-9a-f-]{16,}$/i.test(key);
+
   return {
     key: 'genericPos',
-    name: itemTypeKey || 'جهاز نقاط بيع / مستلزمات',
+    name: (!looksLikeOpaqueId && itemTypeKey) || 'صنف غير مصنّف',
     nameEn: 'POS Hardware Equipment',
     category: 'devices',
     manufacturer: 'RASSCO Equipment',
@@ -142,18 +146,43 @@ export const getItemMetadata = (itemTypeKey: string): ItemMetadata => {
 
 interface ItemProductAvatarProps {
   itemTypeKey: string;
+  /** Override the guessed display name — use when the real item type name is already
+   * known from the API (e.g. itemTypeNameAr), since itemTypeKey may be an opaque
+   * UUID that getItemMetadata() cannot recognize by keyword. */
+  displayName?: string;
+  /** Override the guessed category (devices/sim/...) when already known from the API. */
+  displayCategory?: ItemMetadata['category'];
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showSubtext?: boolean;
+  showCategoryPill?: boolean;
   className?: string;
 }
 
+const categoryLabels: Record<ItemMetadata['category'], string> = {
+  devices: 'أجهزة',
+  sim: 'شرائح',
+  printer: 'طابعات',
+  accessory: 'ملحقات',
+};
+
 export const ItemProductAvatar: React.FC<ItemProductAvatarProps> = ({
   itemTypeKey,
+  displayName,
+  displayCategory,
   size = 'md',
   showSubtext = true,
+  showCategoryPill = false,
   className = '',
 }) => {
-  const meta = getItemMetadata(itemTypeKey);
+  // If itemTypeKey is an opaque id (e.g. a UUID) that doesn't match any known
+  // product keyword, guessing from it alone would surface the raw id as the
+  // "name". Prefer the caller-supplied real name/category when given.
+  const guessed = getItemMetadata(itemTypeKey);
+  const meta: ItemMetadata = {
+    ...guessed,
+    name: displayName || guessed.name,
+    category: displayCategory || guessed.category,
+  };
 
   const sizeMap = {
     xs: { box: 'w-8 h-8 rounded-lg', icon: 'w-4 h-4', title: 'text-xs', sub: 'hidden' },
@@ -208,15 +237,20 @@ export const ItemProductAvatar: React.FC<ItemProductAvatarProps> = ({
   };
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
+    <div className={`flex items-center gap-3 min-w-0 ${className}`}>
       {/* Product Image Thumbnail */}
       <div className={`${dim.box} shrink-0`}>
         {renderProductGraphic()}
       </div>
 
       {/* Product Text Details */}
-      <div className="flex flex-col text-right">
-        <span className={`${dim.title} text-slate-900 leading-tight`}>{meta.name}</span>
+      <div className="flex flex-col text-right min-w-0 flex-1">
+        {showCategoryPill && (
+          <span className="self-start px-2 py-0.5 mb-1 rounded-full bg-slate-100 text-slate-600 text-[9px] font-black w-fit">
+            {categoryLabels[meta.category]}
+          </span>
+        )}
+        <span className={`${dim.title} text-slate-900 leading-tight truncate`}>{meta.name}</span>
         {showSubtext && (
           <span className={`${dim.sub} text-slate-500 font-semibold mt-0.5`}>
             {meta.category === 'sim' ? 'شرائح اتصال (5G / M2M)' : `${meta.manufacturer} (Android)`}

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { NodePgDatabase, NodePgTransaction } from "drizzle-orm/node-postgres";
 import type { ExtractTablesWithRelations } from "drizzle-orm";
 import type { IUserRepository, OrdinaryUserFieldUpdate, UserAuthState, UserSecurityState } from '@stockpro/contracts';
@@ -110,10 +110,14 @@ export class DrizzleUserRepository implements IUserRepository {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
+    // Production parity (03f7a1a): usernames match case- and
+    // surrounding-whitespace-insensitively, as Production does today.
+    if (!username || !username.trim()) return undefined;
+    const cleanUsername = username.trim();
     const [user] = await this.db
       .select()
       .from(users)
-      .where(eq(users.username, username));
+      .where(sql`LOWER(TRIM(${users.username})) = LOWER(${cleanUsername})`);
 
     return user || undefined;
   }
