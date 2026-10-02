@@ -152,6 +152,8 @@ const DB_DEPENDENT_TEST_FILES = [
   "apps/api/src/core/tests/security/items-status-authorization.routes.test.ts",
   "apps/api/src/modules/inventory/infrastructure/services/inventory-scan.idempotency-concurrency.test.ts",
   "apps/api/src/core/tests/concurrency/inventory-scan.idempotency-http.test.ts",
+  // Production parity: case-insensitive username lookup is SQL (real Postgres).
+  "apps/api/src/modules/identity/infrastructure/database/DrizzleUserRepository.username-lookup.test.ts",
 ];
 
 const args = [

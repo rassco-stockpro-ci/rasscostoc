@@ -327,7 +327,8 @@ export class SerializedItemsService {
           and(
             eq(items.id, item.id),
             eq(items.currentOwnerId, technicianId),
-            inArray(items.status, ["IN_TRANSIT_CUSTODY", "RECEIVED_BY_TECHNICIAN"])
+            // same active-custody set the SELECT above locked the row under
+            inArray(items.status, [...ACTIVE_CUSTODY_STATUSES])
           )
         )
         .returning();

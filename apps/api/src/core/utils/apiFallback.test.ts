@@ -71,19 +71,15 @@ describe("TEMP-STABILIZATION — API never falls back to the SPA HTML shell", ()
     expect(calls.json).toBeUndefined();
   });
 
-  it("the actual deployed source in vite.ts carries this exact guard in BOTH wildcard handlers", () => {
-    const source = fs.readFileSync(
-      path.resolve(process.cwd(), "apps/api/src/core/utils/vite.ts"),
-      "utf-8"
-    );
-    // The dev handler (setupVite) assigns `const url = req.originalUrl` and
-    // guards on `url.startsWith(...)`; the production handler (serveStatic)
-    // guards on `req.originalUrl.startsWith(...)` directly — count both forms
-    // by simple substring match rather than a regex sensitive to word
-    // boundaries around the mixed-case "originalUrl".
-    const guardOccurrences = source.split('.startsWith("/api/")').length - 1;
-    // One guard in setupVite() (dev), one in serveStatic() (production).
-    expect(guardOccurrences).toBe(2);
-    expect(source).toContain('"API endpoint not found"');
+  it("the deployed source carries this exact guard in BOTH wildcard handlers (dev: vite.ts, production: static.ts)", () => {
+    // main keeps the production serveStatic() in static.ts (so the production
+    // bundle never imports the dev-only vite package); the dev setupVite()
+    // stays in vite.ts. Each must carry the /api guard exactly once.
+    const read = (f: string) => fs.readFileSync(path.resolve(process.cwd(), "apps/api/src/core/utils", f), "utf-8");
+    for (const f of ["vite.ts", "static.ts"]) {
+      const source = read(f);
+      expect(source.split('.startsWith("/api/")').length - 1, f).toBe(1);
+      expect(source, f).toContain('"API endpoint not found"');
+    }
   });
 });
