@@ -395,6 +395,13 @@
       "breakpoints": true
     },
     {
+      "idx": 61,
+      "version": "7",
+      "when": 1785826886500,
+      "tag": "0061_courier_requests_region_id_add_reconcile",
+      "breakpoints": true
+    },
+    {
       "idx": 56,
       "version": "7",
       "when": 1785826887000,
@@ -427,6 +434,13 @@
       "version": "7",
       "when": 1787840002000,
       "tag": "0060_courier_execution_units_add",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1787840003000,
+      "tag": "0062_platform_lock_state_baseline",
       "breakpoints": true
     }
   ]

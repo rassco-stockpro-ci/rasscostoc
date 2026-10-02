@@ -201,6 +201,8 @@ jobs:
           fi
       - name: Drift check (schema.ts vs migrated DB — safe, isolated only)
         run: node scripts/erp008-drift-check.mjs --allow-test-db
+      - name: Migration lineage rehearsal (Production-shaped ledger -> main; from zero; second run NO-OP; data fingerprints)
+        run: node scripts/migration-lineage-rehearsal.mjs --allow-test-db --synthetic
       - name: Cleanup note
         if: always()
         run: echo "Service container is torn down automatically by the runner at job end; no manual cleanup needed."
