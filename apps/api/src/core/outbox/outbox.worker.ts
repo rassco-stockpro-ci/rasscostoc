@@ -13,7 +13,15 @@ export class OutboxWorker {
 
   constructor(options?: { intervalMs?: number; batchSize?: number }) {
     this.workerId = `worker-${randomUUID()}`;
-    this.intervalMs = options?.intervalMs || 5000; // default 5 seconds
+    // ROOT FIX: was 5000ms/20 — under a real closing-rush burst (many
+    // technicians ending a shift at once), this worker is what actually
+    // performs the inventory deduction for every closed courier request.
+    // At 5s/20 sequentially, 100 simultaneous closures took 25s+ to fully
+    // drain (correctness was never at risk — outbox durability + retries
+    // guarantee that — but the visible delay before a technician's custody
+    // updates was avoidable). Tightened polling to 2s and let runOnce
+    // process its batch concurrently (see below) instead of one at a time.
+    this.intervalMs = options?.intervalMs || 2000;
     this.batchSize = options?.batchSize || 20;
   }
 
@@ -67,7 +75,31 @@ export class OutboxWorker {
 
     const eventBus = EventBus.getInstance();
 
+    // ROOT FIX: this used to be a plain sequential for-loop, so a batch of
+    // (say) 20 independent courier closures from 20 different technicians
+    // fully serialized behind one another — one slow event delayed every
+    // event after it in the batch. Events for the SAME requestId (e.g. an
+    // ExecutionSavedEvent and the ExecutionCompletedEvent it can trigger)
+    // still run sequentially, in original order, to preserve any ordering
+    // a single request's event stream depends on; events for DIFFERENT
+    // requestIds now run concurrently, since they touch unrelated data.
+    const groups = new Map<string, typeof pendingEvents>();
     for (const record of pendingEvents) {
+      const groupKey = (record.payload as any)?.requestId != null
+        ? `req:${(record.payload as any).requestId}`
+        : `event:${record.id}`;
+      const group = groups.get(groupKey);
+      if (group) group.push(record);
+      else groups.set(groupKey, [record]);
+    }
+
+    await Promise.allSettled(
+      Array.from(groups.values()).map((group) => this.processSequentially(group, eventBus))
+    );
+  }
+
+  private async processSequentially(records: any[], eventBus: EventBus): Promise<void> {
+    for (const record of records) {
       // A lease recovered too many times (its worker kept dying mid-event):
       // dead-letter it instead of dispatching it again.
       if (record.retryCount >= MAX_ATTEMPTS) {

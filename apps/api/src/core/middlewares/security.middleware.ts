@@ -2,9 +2,18 @@ import type { Request, Response, NextFunction } from "express";
 import { sql } from "drizzle-orm";
 import { db } from "../config/db";
 import { logger } from "../telemetry/logger";
+import * as jwt from "@server/utils/jwt";
+import { JWT_SECRET } from "../config/jwt.config";
 
 const LIMIT_WINDOW_MS = 60000; // 1 minute window
-const MAX_REQUESTS_PER_WINDOW = 150; // 150 requests per minute
+// ROOT FIX: raised from 150 — this budget used to be shared per-IP (see
+// rateLimitKey below for why that was the real problem), so 150/min had to
+// absorb every technician behind one office/carrier NAT combined. Per-key
+// is now per-authenticated-user, so each technician gets their own budget;
+// 300 gives real headroom for a busy closing session (each courier close
+// fires several serial-lookup calls per scan attempt) without meaningfully
+// weakening abuse protection on unauthenticated endpoints (still IP-keyed).
+const MAX_REQUESTS_PER_WINDOW = 300;
 
 /**
  * ERP-008 Phase 4: the counter used to live in a process-local `Map`, so
@@ -54,10 +63,41 @@ export async function rateLimiter(req: Request, res: Response, next: NextFunctio
 
   const ip = req.ip || req.socket.remoteAddress || "unknown-ip";
 
+  // ROOT FIX: this ran BEFORE session/auth resolution in the middleware
+  // chain, so it had no choice but to key on raw IP — meaning every
+  // technician behind the same office/mobile-carrier NAT shared ONE 150
+  // req/min budget. Confirmed in production logs: repeated "Rate limit
+  // exceeded" bursts for a single IP, which throttles an unrelated
+  // technician's legitimate close-order attempt just because someone else
+  // on the same network used up the shared quota. Decoding the Bearer
+  // token here (the same JWT requireAuth verifies later) lets each signed-in
+  // technician get their own independent budget; requests with no valid
+  // token (login, public verification lookups, etc.) still key on IP, so
+  // brute-force protection on those endpoints is unchanged.
+  const rateLimitKey = ((): string => {
+    // Defensive: req.headers is always a real object on genuine Express
+    // requests, but minimal request-like mocks (e.g. this middleware's own
+    // race/concurrency test harness) may omit it entirely — optional
+    // chaining here keeps that a clean IP-keyed fallback instead of an
+    // uncaught TypeError that the caller's own catch() then silently turns
+    // into a misleading 500 for every request.
+    const authHeader = req.headers?.authorization;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token) return `ip:${ip}`;
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded?.userId) return `user:${decoded.userId}`;
+    } catch {
+      // Invalid/expired token — requireAuth (if this route needs it) will
+      // reject it properly later; here we just fall back to IP keying.
+    }
+    return `ip:${ip}`;
+  })();
+
   let count: number;
   let resetAt: number;
   try {
-    ({ count, resetAt } = await incrementRateLimitCounter(ip, LIMIT_WINDOW_MS));
+    ({ count, resetAt } = await incrementRateLimitCounter(rateLimitKey, LIMIT_WINDOW_MS));
   } catch (err) {
     // Fail-open: every other component on this request path (sessions,
     // readiness) already hard-depends on the same database, so a DB outage
@@ -81,10 +121,10 @@ export async function rateLimiter(req: Request, res: Response, next: NextFunctio
 
   if (count > MAX_REQUESTS_PER_WINDOW) {
     logger.warn({
-      message: `Rate limit exceeded for IP: ${ip}`,
+      message: `Rate limit exceeded for key: ${rateLimitKey}`,
       module: "security",
       action: "rateLimitExceeded",
-      metadata: { ip, path, count }
+      metadata: { ip, rateLimitKey, path, count }
     });
 
     res.status(429).json({
