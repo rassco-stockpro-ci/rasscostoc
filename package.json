@@ -11,7 +11,8 @@
     "dev": "cross-env NODE_ENV=development PORT=3001 tsx apps/api/src/server.ts",
     "dev:clean": "node scripts/kill-port.cjs 3001 && npm run dev",
     "build:packages": "tsc -p packages/ai-extraction/tsconfig.json",
-    "build": "npm run build:packages && vite build && esbuild apps/api/src/server.ts --platform=node --packages=external --bundle --format=esm --splitting --minify --sourcemap=external --metafile=dist/meta.json --outdir=dist && node scripts/write-release-sha.cjs",
+    "build": "node scripts/check-node-version.cjs && node scripts/clean-dist.cjs && npm run build:packages && vite build && esbuild apps/api/src/server.ts --platform=node --packages=external --bundle --format=esm --splitting --minify --sourcemap=external --metafile=dist/meta.json --outdir=dist && node scripts/verify-runtime-deps.cjs && node scripts/write-release-sha.cjs",
+    "build:release": "cross-env RELEASE_REQUIRE_CLEAN=1 npm run build",
     "start": "cross-env NODE_ENV=production node dist/server.js",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
@@ -104,6 +105,8 @@
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
     "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^5.4.296",
+    "pg": "^8.13.1",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -172,5 +175,8 @@
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
+  },
+  "engines": {
+    "node": "24.18.0"
   }
 }

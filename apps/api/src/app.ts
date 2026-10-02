@@ -2,7 +2,7 @@ import express from "express";
 import { setupSession } from "@core/config/session";
 import { idempotency } from "@core/middlewares/idempotency.middleware";
 import { errorHandler } from "@core/errors/errorHandler";
-import { log } from "@core/utils/vite";
+import { log } from "@core/utils/log";
 import { correlationMiddleware } from "@core/telemetry/telemetry";
 import { tracer } from "@core/telemetry/tracer";
 import { configService } from "@core/config/config.service";

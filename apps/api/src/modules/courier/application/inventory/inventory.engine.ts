@@ -48,6 +48,13 @@ import {
 } from "./inventory.engine.types";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
 import type { ICourierInventoryPort } from "../../domain/repositories/ICourierInventoryPort";
+import { consumableRequirements } from "./consumables";
+
+/** Output of InventoryEngine.prepare(): the resolved context and canonical serials. */
+export interface PreparedDeduction {
+  ctx: DeductionContext;
+  canonicalSerials: string[];
+}
 
 export class InventoryEngine {
   constructor(
@@ -66,6 +73,17 @@ export class InventoryEngine {
    * propagates out of this method and rolls back every write made so far.
    */
   async deduct(ctx: DeductionContext): Promise<DeductionResult> {
+    const prepared = await this.prepare(ctx);
+    return this.txRunner.run((transactionCtx) => this.executePrepared(prepared, transactionCtx));
+  }
+
+  /**
+   * Read-and-validate phase of deduct(): no writes. Callers that run the
+   * write phase inside their own transaction (a courier close that must
+   * commit together with its deduction) call this BEFORE opening that
+   * transaction, for the pool reason explained below.
+   */
+  async prepare(ctx: DeductionContext): Promise<PreparedDeduction> {
     // Pure-read technician/serial resolution runs BEFORE the transaction
     // opens (outer pool) — running it inside the transaction on a small
     // connection pool self-deadlocks (the transaction holds one connection
@@ -111,67 +129,80 @@ export class InventoryEngine {
     // LIMIT 1 at write time. Pure read, outer pool.
     const canonicalSerials = await this.canonicalizeSerials(ctx, undefined);
 
-    return this.txRunner.run(async (transactionCtx) => {
-      const result: DeductionResult = {
-        requestId: ctx.requestId,
-        generalInventoryDeducted: false,
-        custodyItemsDeducted: [],
-        errors: [],
-      };
+    return { ctx, canonicalSerials };
+  }
 
-      // OPS-REMED-E3-I.R2: reconcile explicit pairs against
-      // courier_request_items transaction-consistently — reads happen
-      // INSIDE this transaction via the transaction-bound
-      // findLinkedRequestItemBySerial(serial, transactionCtx) call, not
-      // via a pre-transaction outer-pool read. Any disagreement rolls back
-      // the whole request before any write occurs.
-      await this.reconcilePairsWithRequestItems(ctx, transactionCtx);
+  /**
+   * Write phase of deduct(), inside the caller's transaction. Every write
+   * decision is re-validated here under row locks; any failure throws and
+   * the caller's transaction rolls everything back.
+   */
+  async executePrepared(
+    prepared: PreparedDeduction,
+    transactionCtx: InventoryTransactionContext
+  ): Promise<DeductionResult> {
+    const { ctx, canonicalSerials } = prepared;
+    const result: DeductionResult = {
+      requestId: ctx.requestId,
+      generalInventoryDeducted: false,
+      custodyItemsDeducted: [],
+      errors: [],
+    };
 
-      // v3 custody (items + moving sync via scanOut) is authoritative.
-      // Run it first so serials leave active custody and counters drop once.
-      await this.deductSerializedCustody(
-        { ...ctx, serialsForCustody: canonicalSerials },
+    // OPS-REMED-E3-I.R2: reconcile explicit pairs against
+    // courier_request_items transaction-consistently — reads happen
+    // INSIDE this transaction via the transaction-bound
+    // findLinkedRequestItemBySerial(serial, transactionCtx) call, not
+    // via a pre-transaction outer-pool read. Any disagreement rolls back
+    // the whole request before any write occurs.
+    await this.reconcilePairsWithRequestItems(ctx, transactionCtx);
+
+    // v3 custody (items + moving sync via scanOut) is authoritative.
+    // Run it first so serials leave active custody and counters drop once.
+    await this.deductSerializedCustody(
+      { ...ctx, serialsForCustody: canonicalSerials },
+      result,
+      transactionCtx
+    );
+
+    // Legacy general pool only for device SNs that were NOT deducted via custody scan-out
+    // (avoids double-decrement of technician_moving_inventory_entries).
+    const deducted = new Set(
+      result.custodyItemsDeducted.map((s) => s.trim().toLowerCase())
+    );
+    const remainingDevices = ctx.devices.filter(
+      (d) => !deducted.has(d.serialNumber.trim().toLowerCase())
+    );
+    if (remainingDevices.length > 0) {
+      await this.deductGeneralInventory(
+        { ...ctx, devices: remainingDevices },
         result,
         transactionCtx
       );
+    }
 
-      // Legacy general pool only for device SNs that were NOT deducted via custody scan-out
-      // (avoids double-decrement of technician_moving_inventory_entries).
-      const deducted = new Set(
-        result.custodyItemsDeducted.map((s) => s.trim().toLowerCase())
-      );
-      const remainingDevices = ctx.devices.filter(
-        (d) => !deducted.has(d.serialNumber.trim().toLowerCase())
-      );
-      if (remainingDevices.length > 0) {
-        await this.deductGeneralInventory(
-          { ...ctx, devices: remainingDevices },
-          result,
-          transactionCtx
-        );
-      }
+    await this.deductConsumables(ctx, transactionCtx);
 
-      // OPS-REMED-E4-P2: the LAST statement of this transaction — reached
-      // only if every prior write above succeeded without throwing. Covers
-      // serialized-only, general-only, and mixed deductions uniformly
-      // (unlike items.status='DELIVERED' alone, which is silent for
-      // general-inventory-only requests — the real gap this closes,
-      // A.6 §5). ctx.sourceEventId is optional on DeductionContext for
-      // backward compatibility with any existing caller (same pattern
-      // already established for ctx.pairs) — the real production caller
-      // (InventorySubscriber) always supplies the true causal id; a caller
-      // that does not is still recorded (evidence is never silently
-      // skipped), using a locally generated id that carries no causal
-      // meaning back to any outbox event.
-      await this.completionRecorder.recordCompletion(transactionCtx, {
-        requestId: ctx.requestId,
-        sourceEventId: ctx.sourceEventId ?? randomUUID(),
-        generalInventoryDeducted: result.generalInventoryDeducted,
-        serializedItemCount: result.custodyItemsDeducted.length,
-      });
-
-      return result;
+    // OPS-REMED-E4-P2: the LAST statement of this transaction — reached
+    // only if every prior write above succeeded without throwing. Covers
+    // serialized-only, general-only, and mixed deductions uniformly
+    // (unlike items.status='DELIVERED' alone, which is silent for
+    // general-inventory-only requests — the real gap this closes,
+    // A.6 §5). ctx.sourceEventId is optional on DeductionContext for
+    // backward compatibility with any existing caller (same pattern
+    // already established for ctx.pairs) — the real production caller
+    // (InventorySubscriber) always supplies the true causal id; a caller
+    // that does not is still recorded (evidence is never silently
+    // skipped), using a locally generated id that carries no causal
+    // meaning back to any outbox event.
+    await this.completionRecorder.recordCompletion(transactionCtx, {
+      requestId: ctx.requestId,
+      sourceEventId: ctx.sourceEventId ?? randomUUID(),
+      generalInventoryDeducted: result.generalInventoryDeducted,
+      serializedItemCount: result.custodyItemsDeducted.length,
     });
+
+    return result;
   }
 
   /**
@@ -369,6 +400,37 @@ export class InventoryEngine {
 
     const techUser = await this.inventoryPort.findUserByCodeOrUsername(code);
     return techUser ?? null;
+  }
+
+  /**
+   * Consumables entered on the close (paper rolls, stickers, Neoleap cards).
+   * Runs inside the request-wide transaction, so a shortfall rolls back the
+   * whole deduction, devices included.
+   */
+  private async deductConsumables(
+    ctx: DeductionContext,
+    transactionCtx: InventoryTransactionContext
+  ): Promise<void> {
+    const items = consumableRequirements(ctx).map((r) => ({ itemTypeId: r.itemTypeId, quantity: r.quantity }));
+    if (items.length === 0) return;
+
+    try {
+      await this.generalInventory.deductTechnicianConsumables(
+        {
+          technicianId: (ctx as any).technicianId,
+          items,
+          actorId: ctx.actorId,
+          notes: `خصم مواد استهلاكية — طلب رقم: ${ctx.requestId}`,
+        },
+        transactionCtx
+      );
+    } catch (err: any) {
+      const code =
+        err?.code === "DEDUCT_INSUFFICIENT_STOCK" || err?.code === "DEDUCT_INTEGRITY_CONFLICT"
+          ? err.code
+          : "DEDUCT_INFRA_TRANSIENT";
+      throw new DeductionError(code, ctx.requestId, `[InventoryEngine] Consumables deduction failed: ${err.message}`);
+    }
   }
 
   private async deductGeneralInventory(

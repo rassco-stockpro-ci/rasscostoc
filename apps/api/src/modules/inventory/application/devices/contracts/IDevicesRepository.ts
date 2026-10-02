@@ -52,4 +52,16 @@ export interface IDevicesRepository {
     notes?: string;
     actor: { id: string; username: string; role: string; regionId: string | null };
   }, externalTx?: any): Promise<any[]>;
+
+  /**
+   * Consumables delivered on a courier close: moving inventory first, then
+   * fixed, opening sealed boxes as needed. Throws code
+   * DEDUCT_INSUFFICIENT_STOCK when the total cannot cover a quantity.
+   */
+  deductTechnicianConsumables(data: {
+    technicianId: string;
+    items: { itemTypeId: string; quantity: number }[];
+    actorId: string;
+    notes: string;
+  }, externalTx?: any): Promise<void>;
 }

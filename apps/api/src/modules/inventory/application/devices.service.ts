@@ -226,4 +226,16 @@ export class DevicesService {
   }, externalTx?: any): Promise<any[]> {
     return this.devicesRepository.deductTechnicianInventory(data, externalTx);
   }
+
+  /**
+   * Deduct consumables delivered on a courier close (moving first, then fixed)
+   */
+  async deductTechnicianConsumables(data: {
+    technicianId: string;
+    items: { itemTypeId: string; quantity: number }[];
+    actorId: string;
+    notes: string;
+  }, externalTx?: any): Promise<void> {
+    return this.devicesRepository.deductTechnicianConsumables(data, externalTx);
+  }
 }

@@ -20,13 +20,7 @@ import {
   type TechUser,
 } from "./guard.types";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
-
-/** Active technician custody — keep in sync with inventory custody semantics (no FSM import). */
-const ACTIVE_CUSTODY_STATUSES = [
-  "IN_TRANSIT_CUSTODY",
-  "RECEIVED_BY_TECHNICIAN",
-  "IN_TRANSIT",
-] as const;
+import { isInActiveCustodyOf } from "../../../inventory/contracts/custody-policy";
 
 interface ResolvedSerial {
   raw: string;
@@ -37,18 +31,43 @@ interface ResolvedSerial {
   role: "device" | "sim";
 }
 
+/** A serial validated for THIS close, by its stored (canonical) form. */
+export interface CloseItem {
+  serialNumber: string;
+  role: "device" | "sim";
+}
+
+/** courier_request_items row the close must create; applied by the caller inside its transaction. */
+export interface RequestItemBinding {
+  requestId: number;
+  itemType: "POS" | "SIM";
+  serialNumber?: string;
+  simSerial?: string;
+  quantity: number;
+  status: "RECEIVED";
+  technicianId: string;
+}
+
+export interface CustodyDecision {
+  items: CloseItem[];
+  requestItemsToBind: RequestItemBinding[];
+}
+
 export class CustodyGuard {
   /**
    * Validate custody for all serial numbers in the execution.
    * Must be called AFTER TechnicianGuard resolves the techUser.
    *
+   * Read-only: returns the request items the close must bind instead of
+   * writing them, so a later guard's rejection leaves no state behind.
+   *
    * @throws GuardValidationError if any check fails
    */
-  static async validate(ctx: GuardContext, techUser: TechUser): Promise<void> {
+  static async validate(ctx: GuardContext, techUser: TechUser): Promise<CustodyDecision> {
     const { executionData, requestId } = ctx;
 
     if (!isCompletedStatus(executionData.installationStatus)) {
-      return;
+      return { items: [], requestItemsToBind: [] };
     }
 
     const deviceSerials = normalizeSerialList(executionData.deviceSerials, executionData.sn);
@@ -76,7 +95,7 @@ export class CustodyGuard {
       let item: any = null;
       for (const candidate of candidates) {
         const found = await ctx.inventoryPort.findItemBySerial(candidate);
-        if (found && found.currentOwnerId === techUser.id && (ACTIVE_CUSTODY_STATUSES as readonly string[]).includes(found.status)) {
+        if (found && isInActiveCustodyOf(found, techUser.id)) {
           item = found;
           break;
         }
@@ -116,45 +135,22 @@ export class CustodyGuard {
     }
 
     const requestItems = await ctx.requestsRepo.findRequestItems(requestId);
+    const isLinked = (serial: string) =>
+      requestItems.some((item: any) => item.serialNumber === serial || item.simSerial === serial);
 
     // Auto-bind when portal closes without Flutter pre-assigning request items
-    for (const entry of resolved.filter((r) => r.role === "device")) {
-      const link = requestItems.find(
-        (item: any) => item.serialNumber === entry.serialNumber || item.simSerial === entry.serialNumber
+    const requestItemsToBind: RequestItemBinding[] = resolved
+      .filter((entry) => !isLinked(entry.serialNumber))
+      .map((entry) =>
+        entry.role === "device"
+          ? { requestId, itemType: "POS", serialNumber: entry.serialNumber, quantity: 1, status: "RECEIVED", technicianId: techUser.id }
+          : { requestId, itemType: "SIM", simSerial: entry.serialNumber, quantity: 1, status: "RECEIVED", technicianId: techUser.id }
       );
 
-      if (!link) {
-        await ctx.requestsRepo.insertRequestItems([{
-          requestId,
-          itemType: "POS",
-          serialNumber: entry.serialNumber,
-          quantity: 1,
-          status: "RECEIVED",
-          scannedAt: new Date(),
-          receivedAt: new Date(),
-          technicianId: techUser.id,
-        }]);
-      }
-    }
-
-    for (const entry of resolved.filter((r) => r.role === "sim")) {
-      const simLink = requestItems.find(
-        (item: any) => item.simSerial === entry.serialNumber || item.serialNumber === entry.serialNumber
-      );
-
-      if (!simLink) {
-        await ctx.requestsRepo.insertRequestItems([{
-          requestId,
-          itemType: "SIM",
-          simSerial: entry.serialNumber,
-          quantity: 1,
-          status: "RECEIVED",
-          scannedAt: new Date(),
-          receivedAt: new Date(),
-          technicianId: techUser.id,
-        }]);
-      }
-    }
+    return {
+      items: resolved.map((r) => ({ serialNumber: r.serialNumber, role: r.role })),
+      requestItemsToBind,
+    };
   }
 
   private static async writeAuditFailure(

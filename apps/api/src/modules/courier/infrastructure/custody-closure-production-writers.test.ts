@@ -25,7 +25,9 @@ import {
   courierExecutions,
   courierAuditLogs,
   regions,
+  inventoryDeductionCompletions,
 } from "@shared/schema";
+import { createInventoryEngine } from "../composition/courier.container";
 import { CourierService } from "../application/courier.service";
 import { DrizzleCourierRepository } from "./repositories/drizzle-courier.repository";
 import { DrizzleCourierUnitOfWork } from "./repositories/DrizzleCourierUnitOfWork";
@@ -56,6 +58,7 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
       await db.delete(courierPdfReports).where(eq(courierPdfReports.id, id)).catch(() => {});
     }
     for (const requestId of createdRequestIds.splice(0)) {
+      await db.delete(inventoryDeductionCompletions).where(eq(inventoryDeductionCompletions.requestId, requestId)).catch(() => {});
       await db.delete(courierExecutions).where(eq(courierExecutions.requestId, requestId)).catch(() => {});
       await db.delete(courierRequests).where(eq(courierRequests.id, requestId)).catch(() => {});
     }
@@ -72,7 +75,7 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
 
   function makeService(): CourierService {
     const repo = new DrizzleCourierRepository();
-    return new CourierService(new DrizzleCourierUnitOfWork(), repo, repo, repo, repo, repo);
+    return new CourierService(new DrizzleCourierUnitOfWork(), repo, repo, repo, repo, repo, createInventoryEngine());
   }
 
   async function seedTechnician(label: string) {
@@ -109,6 +112,18 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
       currentOwnerId: ownerId,
     });
     createdItemIds.push(itemId);
+
+    // Its SIM, in the same custody (completeBody sends a complete pair).
+    const simItemId = randomUUID();
+    await db.insert(items).values({
+      id: simItemId,
+      itemTypeId,
+      serialNumber: `${serialNumber}S`,
+      barcode: `${serialNumber}S-BAR`,
+      status: "RECEIVED_BY_TECHNICIAN",
+      currentOwnerId: ownerId,
+    });
+    createdItemIds.push(simItemId);
     return itemId;
   }
 
@@ -145,7 +160,7 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
 
   function completeBody(serial: string, technicianUsername: string) {
     return {
-      devices: [{ sn: serial, technician_code: technicianUsername }],
+      devices: [{ sn: serial, sim_serial: `${serial}S`, technician_code: technicianUsername }],
       deliveryDate: "2026-07-12",
       time: "17:53",
       paperRoll: "Yes",
@@ -252,7 +267,10 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
     expect(row.custodyClosureStatus).toBe("RECONCILIATION_REQUIRED");
   });
 
-  it("7. the already-correct completePdfReport initialization remains unchanged (PENDING_DEDUCTION)", async () => {
+  // PRE-MULTI-DEVICE HARDENING (intentional change): completePdfReport
+  // still inserts the row as PENDING_DEDUCTION, but its deduction now
+  // commits in the same transaction, which then moves it to CLOSED_SUCCESS.
+  it("7. completePdfReport: fresh row is inserted PENDING_DEDUCTION and commits CLOSED_SUCCESS with its deduction", async () => {
     const tech = await seedTechnician("complete");
     const serial = testSerial("P4WOK");
     await seedDeviceInCustody(tech, serial);
@@ -263,6 +281,6 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
     await service.completePdfReport(pdfId, requestId, completeBody(serial, tech), tech);
 
     const [row] = await db.select().from(courierExecutions).where(eq(courierExecutions.requestId, requestId));
-    expect(row.custodyClosureStatus).toBe("PENDING_DEDUCTION");
+    expect(row.custodyClosureStatus).toBe("CLOSED_SUCCESS");
   });
 });

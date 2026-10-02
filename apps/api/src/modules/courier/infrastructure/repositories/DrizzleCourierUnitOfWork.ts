@@ -1,5 +1,7 @@
 import { getDatabase } from "@core/database/connection";
+import { outboxRepository } from "@core/outbox/outbox.repository";
 import type { ICourierUnitOfWork, CourierTransactionalContext } from "../../domain/repositories/ICourierUnitOfWork";
+import type { InventoryTransactionContext } from "../../domain/transaction";
 import { DrizzleCourierRepository } from "./drizzle-courier.repository";
 
 export class DrizzleCourierUnitOfWork implements ICourierUnitOfWork {
@@ -13,6 +15,11 @@ export class DrizzleCourierUnitOfWork implements ICourierUnitOfWork {
         pdfRepository: repo,
         dashboardRepository: repo,
         inventoryPort: repo,
+        // The transaction contract (domain/transaction.ts): the only place a
+        // concrete Drizzle transaction becomes the opaque handle the inventory
+        // adapters unwrap, and the only outbox binding a close uses.
+        inventoryTransaction: tx as unknown as InventoryTransactionContext,
+        outbox: { enqueue: (event) => outboxRepository.enqueue(event, tx) },
         tx,
       };
       return work(context);

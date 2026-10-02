@@ -103,6 +103,16 @@ describe("OPS-REMED-E12 — real HTTP PDF approval/rejection conflict responses"
       status: "RECEIVED_BY_TECHNICIAN",
       currentOwnerId: ownerId,
     });
+
+    // Its SIM, in the same custody (the bodies below send a complete pair).
+    await db.insert(items).values({
+      id: randomUUID(),
+      itemTypeId,
+      serialNumber: `${serialNumber}S`,
+      barcode: `${serialNumber}S-BAR`,
+      status: "RECEIVED_BY_TECHNICIAN",
+      currentOwnerId: ownerId,
+    });
     return itemId;
   }
 
@@ -142,7 +152,7 @@ describe("OPS-REMED-E12 — real HTTP PDF approval/rejection conflict responses"
 
       const body = {
         request_id: requestId,
-        devices: [{ sn: serial, technician_code: actor.username }],
+        devices: [{ sn: serial, sim_serial: `${serial}S`, technician_code: actor.username }],
         deliveryDate: "2026-07-12",
         time: "17:53",
         paperRoll: "Yes",

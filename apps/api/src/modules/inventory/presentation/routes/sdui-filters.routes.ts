@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { log } from "@core/utils/vite";
+import { log } from "@core/utils/log";
 
 export function registerSduiFiltersRoutes(app: Express): void {
   app.get("/api/mobile/v1/screens/custody/filters", async (req: Request, res: Response) => {

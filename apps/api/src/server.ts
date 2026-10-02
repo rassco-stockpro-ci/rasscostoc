@@ -6,7 +6,8 @@ import { app } from "./app";
 import { initializeDatabase, getDatabase, closeDatabase } from "@core/database/connection";
 import { pool } from "@core/config/db";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "@core/utils/vite";
+import { log } from "@core/utils/log";
+import { serveStatic } from "@core/utils/static";
 import { errorHandler } from "@core/errors/errorHandler";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { initializeEventSubscribers } from "./composition/events";
@@ -96,6 +97,9 @@ async function startServer() {
 
     // 5. Setup Vite development server or static file serving
     if (configService.isDevelopment) {
+      // Dynamic import: the dev server pulls in the dev-only `vite` package,
+      // which a production install (npm ci --omit=dev) does not contain.
+      const { setupVite } = await import("@core/utils/vite");
       await setupVite(app, server);
     } else {
       await serveStatic(app);

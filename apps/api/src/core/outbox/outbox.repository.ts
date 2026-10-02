@@ -4,6 +4,16 @@ import { eq, and, or, lte, inArray, isNull, sql } from "drizzle-orm";
 import type { IEvent } from "../events/event.types";
 import { metrics } from "../telemetry/metrics";
 
+/**
+ * Processing lease. A claimed event is PROCESSING and owned by one worker
+ * (locked_by) until it is finalized. If that worker dies, the lease expires
+ * after OUTBOX_LEASE_MS and the event becomes claimable again. Every recovery
+ * of an expired PROCESSING lease counts as one attempt (retry_count + 1), so
+ * an event that keeps crashing its worker still reaches DEAD instead of
+ * looping forever.
+ */
+export const OUTBOX_LEASE_MS = 5 * 60 * 1000;
+
 export class OutboxRepository {
   /**
    * Enqueues a domain event into the outbox table.
@@ -68,29 +78,26 @@ export class OutboxRepository {
    */
   async getPendingEvents(limit: number, lockedBy: string): Promise<any[]> {
     const now = new Date();
-    const expiryThreshold = new Date(Date.now() - 5 * 60 * 1000); // 5 minutes lock expiry
+    const expiryThreshold = new Date(Date.now() - OUTBOX_LEASE_MS);
 
     const claimed = await db.transaction(async (tx) => {
-      // Find events that are:
-      // (status = PENDING OR (status = FAILED AND nextRetryAt <= now))
-      // AND
-      // (lockedBy IS NULL OR lockedAt <= expiryThreshold)
+      // Claimable:
+      //   PENDING                         (new, or released)
+      //   FAILED with nextRetryAt <= now  (retry due)
+      //   PROCESSING with lockedAt <= expiryThreshold
+      //                                   (lease expired: its worker died)
+      // and not currently leased by a live worker.
       const eligibleEvents = await tx
-        .select()
+        .select({ id: outboxEvents.id })
         .from(outboxEvents)
         .where(
           and(
             or(
               eq(outboxEvents.status, "PENDING"),
-              and(
-                eq(outboxEvents.status, "FAILED"),
-                lte(outboxEvents.nextRetryAt, now)
-              )
+              and(eq(outboxEvents.status, "FAILED"), lte(outboxEvents.nextRetryAt, now)),
+              and(eq(outboxEvents.status, "PROCESSING"), lte(outboxEvents.lockedAt, expiryThreshold))
             ),
-            or(
-              isNull(outboxEvents.lockedBy),
-              lte(outboxEvents.lockedAt, expiryThreshold)
-            )
+            or(isNull(outboxEvents.lockedBy), lte(outboxEvents.lockedAt, expiryThreshold))
           )
         )
         .limit(limit)
@@ -100,23 +107,18 @@ export class OutboxRepository {
         return [];
       }
 
-      const eventIds = eligibleEvents.map((e) => e.id);
-
-      await tx
+      // A recovered PROCESSING row is an attempt its previous worker never
+      // finished: count it (the right-hand side reads the pre-update row).
+      return tx
         .update(outboxEvents)
         .set({
           status: "PROCESSING",
           lockedBy,
           lockedAt: now,
+          retryCount: sql`CASE WHEN ${outboxEvents.status} = 'PROCESSING' THEN ${outboxEvents.retryCount} + 1 ELSE ${outboxEvents.retryCount} END`,
         })
-        .where(inArray(outboxEvents.id, eventIds));
-
-      return eligibleEvents.map((e) => ({
-        ...e,
-        status: "PROCESSING",
-        lockedBy,
-        lockedAt: now,
-      }));
+        .where(inArray(outboxEvents.id, eligibleEvents.map((e) => e.id)))
+        .returning();
     });
 
     // Update stats gauges (read-only, safe outside the claim transaction)
@@ -125,8 +127,18 @@ export class OutboxRepository {
     return claimed;
   }
 
-  async markAsPublished(id: string): Promise<void> {
-    await db
+  /**
+   * The finalizing writes below are fenced: when `owner` is given, the row is
+   * updated only while that worker still holds the lease. A worker that
+   * stalled past its lease (and was superseded by another) gets `false` and
+   * must not treat the event as its own any more.
+   */
+  private ownedBy(id: string, owner?: string) {
+    return owner ? and(eq(outboxEvents.id, id), eq(outboxEvents.lockedBy, owner)) : eq(outboxEvents.id, id);
+  }
+
+  async markAsPublished(id: string, owner?: string): Promise<boolean> {
+    const rows = await db
       .update(outboxEvents)
       .set({
         status: "PUBLISHED",
@@ -134,12 +146,14 @@ export class OutboxRepository {
         lockedBy: null,
         lockedAt: null,
       })
-      .where(eq(outboxEvents.id, id));
+      .where(this.ownedBy(id, owner))
+      .returning({ id: outboxEvents.id });
     await this.updateStatsGauges();
+    return rows.length > 0;
   }
 
-  async markAsFailed(id: string, error: string, nextRetryAt: Date, currentRetryCount: number): Promise<void> {
-    await db
+  async markAsFailed(id: string, error: string, nextRetryAt: Date, currentRetryCount: number, owner?: string): Promise<boolean> {
+    const rows = await db
       .update(outboxEvents)
       .set({
         status: "FAILED",
@@ -149,8 +163,10 @@ export class OutboxRepository {
         lockedBy: null,
         lockedAt: null,
       })
-      .where(eq(outboxEvents.id, id));
+      .where(this.ownedBy(id, owner))
+      .returning({ id: outboxEvents.id });
     await this.updateStatsGauges();
+    return rows.length > 0;
   }
 
   /**
@@ -159,9 +175,9 @@ export class OutboxRepository {
    * durable final-failure notification in ONE atomic transaction — closing
    * a crash gap where the two used to be separate, non-atomic commits.
    */
-  async markAsDead(id: string, error: string, tx?: any): Promise<void> {
+  async markAsDead(id: string, error: string, tx?: any, owner?: string): Promise<boolean> {
     const client = tx || db;
-    await client
+    const rows = await client
       .update(outboxEvents)
       .set({
         status: "DEAD",
@@ -169,7 +185,8 @@ export class OutboxRepository {
         lockedBy: null,
         lockedAt: null,
       })
-      .where(eq(outboxEvents.id, id));
+      .where(this.ownedBy(id, owner))
+      .returning({ id: outboxEvents.id });
     // Stats gauges are a best-effort read-only side effect — skip them
     // when running inside the caller's transaction to avoid a nested
     // query racing the still-open transaction; the top-level (non-tx)
@@ -177,6 +194,7 @@ export class OutboxRepository {
     if (!tx) {
       await this.updateStatsGauges();
     }
+    return rows.length > 0;
   }
 }
 

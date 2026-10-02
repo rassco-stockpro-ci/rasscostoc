@@ -1,7 +1,6 @@
 import fs from "fs";
 import path from "path";
 import type { ListFilters, CourierRequestItem, CourierExecutionAttempt } from "../domain/courier.types";
-import { devicesContainer } from "@server/composition/devices.container";
 import { extractFromPdf } from "./ocr.helper";
 import {
   buildCompleteExecutionPayload,
@@ -11,31 +10,27 @@ import {
   type CompleteDeviceInput,
 } from "./ai-engine/courier-pdf-extraction.adapter";
 import { parseRawDataWorkbook, buildExportWorkbook } from "./excel.helper";
-import { CompletionGuard, isCompletedStatus } from "./guards/CompletionGuard";
+import { CompletionGuard, GuardValidationError, isCompletedStatus, type CloseItem } from "./guards/CompletionGuard";
 import { normalizeSerialList } from "./guards/guard.types";
+import type { InventoryEngine } from "./inventory/inventory.engine";
+import { CloseRequestUseCase, type ClosePlan } from "./close/close-request.use-case";
+import { assertRequestItemTransition, RequestItemTransitionError } from "../domain/request-item.state-machine";
 import { metrics } from "@core/telemetry/metrics";
-import { CourierWorkflow } from "./workflow/courier.workflow";
-import { WorkflowDecision } from "./workflow/workflow.types";
 import { EventBus } from "@core/events/event-bus";
 import { ExecutionSavedEvent, ExecutionCompletedEvent } from "@core/events/events";
-import { outboxRepository } from "@core/outbox/outbox.repository";
 import { AppError, AuthenticationError, AuthorizationError, OptimisticLockException, NotFoundError, ValidationError, PdfReportAlreadyProcessedError, DuplicateRequestApprovalError } from "@core/errors/AppError";
 import { ROLES } from "@shared/roles";
 import type { AssignCourierRequestCommand } from "@shared/schema";
 import { AuditLogFormatter, type AuditLogDto } from "./audit-log-formatter";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
+import { isActiveCustodyStatus } from "../../inventory/contracts/custody-policy";
 import type { ICourierRequestsRepository } from "../domain/repositories/ICourierRequestsRepository";
 import type { ICourierExecutionsRepository } from "../domain/repositories/ICourierExecutionsRepository";
 import type { ICourierPdfRepository } from "../domain/repositories/ICourierPdfRepository";
 import type { ICourierDashboardReadRepository } from "../domain/repositories/ICourierDashboardReadRepository";
 import type { ICourierInventoryPort } from "../domain/repositories/ICourierInventoryPort";
-import type { ICourierUnitOfWork } from "../domain/repositories/ICourierUnitOfWork";
+import type { ICourierUnitOfWork, CourierTransactionalContext } from "../domain/repositories/ICourierUnitOfWork";
 
-const ACTIVE_CUSTODY_STATUSES = [
-  "IN_TRANSIT_CUSTODY",
-  "RECEIVED_BY_TECHNICIAN",
-  "IN_TRANSIT",
-] as const;
 
 // Re-export for backwards compatibility with any existing consumers
 export type { ListFilters } from "../domain/courier.types";
@@ -47,8 +42,28 @@ export class CourierService {
     private readonly executionsRepo: ICourierExecutionsRepository,
     private readonly pdfRepo: ICourierPdfRepository,
     private readonly dashboardRepo: ICourierDashboardReadRepository,
-    private readonly inventoryPort: ICourierInventoryPort
-  ) {}
+    private readonly inventoryPort: ICourierInventoryPort,
+    inventoryEngine: InventoryEngine
+  ) {
+    this.closeRequest = new CloseRequestUseCase(uow, inventoryPort, inventoryEngine);
+  }
+
+  /** The close semantics shared by every channel (portal, PDF approve/apply, mobile). */
+  private readonly closeRequest: CloseRequestUseCase;
+
+  /** The stored form of a serial (NcD == NCD), or the trimmed input when no item matches. */
+  private static async storedSerial(raw?: string | null): Promise<string | null> {
+    const trimmed = raw?.trim();
+    if (!trimmed) return null;
+    const item = await SerialRecognitionService.findItemBySerial(trimmed);
+    return item?.serialNumber || trimmed;
+  }
+
+  /** Same test the InventorySubscriber applied to execution.simSerial. */
+  private static looksLikeSerial(value?: string | null): boolean {
+    const trimmed = value?.trim();
+    return !!trimmed && trimmed.length >= 6 && !trimmed.startsWith("{") && !trimmed.startsWith("[");
+  }
 
   /**
    * Keep only columns that may be written from the portal/Flutter execution form.
@@ -81,6 +96,11 @@ export class CourierService {
     const out: Record<string, any> = {};
     for (const key of allowed) {
       if (data[key] !== undefined) out[key] = data[key];
+    }
+    // An empty consumable quantity is stored as NULL ("no explicit quantity"),
+    // which is what resolveConsumableQuantities reads it as on both sides.
+    for (const key of ["paperRollQty", "stickersQty", "nulipCardsQty"]) {
+      if (typeof out[key] === "string" && out[key].trim() === "") out[key] = null;
     }
     return out;
   }
@@ -309,9 +329,18 @@ export class CourierService {
       status: "PENDING_RECEIPT",
     }));
 
+    for (const item of newItems) assertRequestItemTransition(null, "ASSIGN", item.status);
+
     let result: CourierRequestItem[];
     await this.uow.execute(async (ctx) => {
-      // 1. Delete existing items for this request to override/assign fresh
+      // 1. Delete existing items for this request to override/assign fresh.
+      // Only items still awaiting receipt may be replaced: a received or
+      // installed item has no transition back to an assignment.
+      const current = await ctx.requestsRepository.findRequestItems(requestId);
+      const progressed = current.find((item) => item.status !== "PENDING_RECEIPT");
+      if (progressed) {
+        throw new RequestItemTransitionError(progressed.status, "ASSIGN", "PENDING_RECEIPT");
+      }
       await ctx.requestsRepository.deleteRequestItems(requestId);
 
       // 2. Insert new request items
@@ -412,6 +441,7 @@ export class CourierService {
           }
 
           if (itemsToCreate.length > 0) {
+            for (const item of itemsToCreate) assertRequestItemTransition(null, "ASSIGN", item.status);
             await ctx.requestsRepository.insertRequestItems(itemsToCreate);
             console.log(`[AcceptRequest] Auto-created ${itemsToCreate.length} request items for request ${requestId}`);
           }
@@ -598,6 +628,7 @@ export class CourierService {
 
     if (matchingItem) {
       // Update item to RECEIVED
+      assertRequestItemTransition(matchingItem.status, "RECEIVE", "RECEIVED");
       const updated = await this.requestsRepo.updateRequestItem(matchingItem.id, {
         status: "RECEIVED",
         scannedAt: new Date(),
@@ -684,6 +715,24 @@ export class CourierService {
               throw new AppError(`الرقم التسلسلي ${serial} مستخدم بالفعل ومستلم في الطلب رقم ${otherAssigned.requestId}`, 400);
             }
           }
+        }
+
+        // Receiving: only items of THIS request, and only to RECEIVED
+        // (request item state machine; MISSING/REJECTED are reserved).
+        const currentById = new Map(
+          (await ctx.requestsRepository.findRequestItems(requestId)).map((item) => [item.id, item])
+        );
+        for (const itemStat of itemStatuses) {
+          const current = currentById.get(itemStat.itemId);
+          if (!current) {
+            throw new AppError(
+              `عنصر الطلب رقم ${itemStat.itemId} لا ينتمي للطلب رقم ${requestId}.`,
+              422,
+              true,
+              "REQUEST_ITEM_NOT_IN_REQUEST"
+            );
+          }
+          assertRequestItemTransition(current.status, "RECEIVE", itemStat.status);
         }
 
         for (const itemStat of itemStatuses) {
@@ -891,8 +940,8 @@ export class CourierService {
       sanitized.simSerial = simSerials[0] ?? null;
     }
 
-    // ─── Guard Validation Layer ───────────────────────────────────────────────
-    const techUser = await CompletionGuard.run({
+    // ─── Guard Validation Layer (read-only) ──────────────────────────────────
+    const decision = await CompletionGuard.run({
       requestId,
       enteredBy,
       executionData: { ...sanitized, deviceSerials, simSerials },
@@ -902,6 +951,7 @@ export class CourierService {
       dashboardRepo: this.dashboardRepo,
       inventoryPort: this.inventoryPort,
     });
+    const techUser = decision.techUser;
     // ─────────────────────────────────────────────────────────────────────────
 
     if (techUser && isCompleted) {
@@ -909,8 +959,20 @@ export class CourierService {
       sanitized.salesTechnician = techUser.fullName;
     }
 
+    const plan = isCompleted
+      ? await this.closeRequest.plan({
+          requestId,
+          actorId: enteredBy,
+          request,
+          technicianCode: CloseRequestUseCase.requireTechnician(techUser).username,
+          closeItems: decision.closeItems,
+          requestItemsToBind: decision.requestItemsToBind,
+          pairs,
+        })
+      : null;
+
     let result: any;
-    await this.uow.execute(async (ctx) => {
+    await this.closeRequest.run(async (ctx) => {
       if (existing) {
         result = await ctx.executionsRepository.updateExecution(
           requestId,
@@ -932,11 +994,8 @@ export class CourierService {
             ...sanitized,
             requestId,
             enteredBy,
-            // OPS-REMED-E4-P4-I2: fresh execution row, whether or not this
-            // particular save is a completed installation — deduction is
-            // only ever triggered by the conditional ExecutionCompletedEvent
-            // enqueue further below in this same transaction, never by the
-            // insert itself.
+            // Fresh row; a completed close moves it to CLOSED_SUCCESS in
+            // this same transaction (closeRequest.commit), after its deduction.
             custodyClosureStatus: "PENDING_DEDUCTION",
           }
         );
@@ -961,36 +1020,26 @@ export class CourierService {
         }),
         ctx.tx
       );
+
+      // A completed close commits together with its deduction and its
+      // ExecutionCompletedEvent, or not at all.
+      if (plan && result) {
+        await this.closeRequest.commit(
+          ctx,
+          plan,
+          new ExecutionCompletedEvent({
+            requestId,
+            actorId: enteredBy,
+            execution: pairs ? { ...result, pairs } : result,
+            request,
+          })
+        );
+      }
     });
 
     if (!result) {
       throw new Error("Failed to save execution: database returned no rows.");
     }
-
-    // ─── Workflow Engine ──────────────────────────────────────────────────────
-    // Called AFTER guards pass and execution is written to DB.
-    // The engine decides the action and delegates side effects.
-    if (isCompleted) {
-      // OPS-REMED-E3: attach `pairs` onto the execution snapshot object
-      // (ExecutionSnapshot has an index signature, and ExecutionCompletedEvent's
-      // `execution` field is typed `any`) — no change to workflow.types.ts or
-      // events.ts required; pairs flows through to InventorySubscriber
-      // unmodified.
-      const workflowResult = await CourierWorkflow.execute({
-        requestId,
-        actorId: enteredBy,
-        execution: pairs ? { ...result, pairs } : result,
-        request,
-      });
-
-      if (workflowResult.sideEffectErrors.length > 0) {
-        console.warn(
-          `[Workflow] Request ${requestId} completed with side-effect warnings:`,
-          workflowResult.sideEffectErrors
-        );
-      }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
 
     return this.getRequestById(requestId);
   }
@@ -1094,7 +1143,7 @@ export class CourierService {
       }
     }
 
-    const isInActiveCustody = (ACTIVE_CUSTODY_STATUSES as readonly string[]).includes(item.status);
+    const isInActiveCustody = isActiveCustodyStatus(item.status);
 
     return {
       found: true,
@@ -1575,7 +1624,7 @@ export class CourierService {
       sanitized.simSerial = simSerials[0] ?? null;
     }
 
-    const techUser = await CompletionGuard.run({
+    const decision = await CompletionGuard.run({
       requestId,
       enteredBy,
       executionData: { ...sanitized, deviceSerials, simSerials },
@@ -1585,17 +1634,30 @@ export class CourierService {
       dashboardRepo: this.dashboardRepo,
       inventoryPort: this.inventoryPort,
     });
+    const techUser = decision.techUser;
 
     if (techUser && isCompleted) {
       sanitized.technicianCode = techUser.username;
       sanitized.salesTechnician = techUser.fullName;
     }
 
-    // ─── Single atomic transaction: claim + execution save + both event
-    // enqueues. Any failure at any step rolls back everything, including
-    // the report claim. ───────────────────────────────────────────────
+    const plan = isCompleted
+      ? await this.closeRequest.plan({
+          requestId,
+          actorId: enteredBy,
+          request,
+          technicianCode: CloseRequestUseCase.requireTechnician(techUser).username,
+          closeItems: decision.closeItems,
+          requestItemsToBind: decision.requestItemsToBind,
+          pairs,
+        })
+      : null;
+
+    // ─── Single atomic transaction: claim + execution save + deduction +
+    // both event enqueues. Any failure at any step rolls back everything,
+    // including the report claim. ─────────────────────────────────────
     let result: any;
-    await this.uow.execute(async (ctx) => {
+    await this.closeRequest.run(async (ctx) => {
       // 1) Atomic claim (E2) — the ONLY authoritative accept/reject
       // decision for this report. A losing concurrent request affects
       // zero rows here and never reaches any further write. Expected
@@ -1685,22 +1747,21 @@ export class CourierService {
       // InventorySubscriber, which opens its own nested transaction) —
       // running that while this transaction's row locks are held risks
       // the same class of self-deadlock already found and fixed in E3.
-      // outboxRepository.enqueue() has no such branch — it only ever
+      // ctx.outbox.enqueue() (the transactional outbox) has no such branch — it only ever
       // performs a plain INSERT bound to ctx.tx.
       const executionForEvent = pairs ? { ...result, pairs } : result;
-      await outboxRepository.enqueue(
-        new ExecutionSavedEvent({ requestId, actorId: enteredBy, execution: executionForEvent, request }),
-        ctx.tx
+      await ctx.outbox.enqueue(
+        new ExecutionSavedEvent({ requestId, actorId: enteredBy, execution: executionForEvent, request })
       );
 
-      if (isCompleted) {
-        const decision = CourierWorkflow.decide(sanitized.installationStatus ?? "");
-        if (decision === WorkflowDecision.TRIGGER_INVENTORY_DEDUCTION) {
-          await outboxRepository.enqueue(
-            new ExecutionCompletedEvent({ requestId, actorId: enteredBy, execution: executionForEvent, request }),
-            ctx.tx
-          );
-        }
+      // 6) Completed: deduction + CLOSED_SUCCESS + ExecutionCompletedEvent,
+      // all on this transaction (closeRequest.commit).
+      if (plan) {
+        await this.closeRequest.commit(
+          ctx,
+          plan,
+          new ExecutionCompletedEvent({ requestId, actorId: enteredBy, execution: executionForEvent, request })
+        );
       }
     });
 
@@ -1835,9 +1896,45 @@ export class CourierService {
       if (f in fields) merged[f] = fields[f];
     }
 
+    // A completed status closes the request: same read-only guards and the
+    // same single-transaction deduction as saveExecution.
+    const isCompleted = isCompletedStatus(merged.installationStatus);
+    let plan: ClosePlan | null = null;
+    if (isCompleted) {
+      const request = await this.requestsRepo.findRequestById(requestId);
+      if (!request) {
+        throw new NotFoundError("Request not found");
+      }
+      const decision = await CompletionGuard.run({
+        requestId,
+        enteredBy: uploadedBy,
+        executionData: {
+          ...merged,
+          deviceSerials: normalizeSerialList(undefined, merged.sn),
+          simSerials: normalizeSerialList(undefined, merged.simSerial),
+        },
+        request,
+        existingExecution: existing ?? null,
+        requestsRepo: this.requestsRepo,
+        dashboardRepo: this.dashboardRepo,
+        inventoryPort: this.inventoryPort,
+      });
+      const techUser = CloseRequestUseCase.requireTechnician(decision.techUser);
+      merged.technicianCode = techUser.username;
+      merged.salesTechnician = techUser.fullName;
+      plan = await this.closeRequest.plan({
+        requestId,
+        actorId: uploadedBy,
+        request,
+        technicianCode: techUser.username,
+        closeItems: decision.closeItems,
+        requestItemsToBind: decision.requestItemsToBind,
+      });
+    }
+
     let result: any;
     let pdfRequest: any;
-    await this.uow.execute(async (ctx) => {
+    await this.closeRequest.run(async (ctx) => {
       if (existing) {
         const version = fields.version;
         result = await ctx.executionsRepository.updateExecution(
@@ -1859,9 +1956,8 @@ export class CourierService {
           ...merged,
           extractionConfidence: JSON.stringify(confidence),
           enteredBy: uploadedBy,
-          // OPS-REMED-E4-P4-I2: draft AI-extraction merge, pre-approval —
-          // this path never itself publishes ExecutionCompletedEvent; only
-          // the separate completePdfReport approval can trigger deduction.
+          // Fresh row; when the merged status is completed, closeRequest.commit
+          // below moves it to CLOSED_SUCCESS in this same transaction.
           custodyClosureStatus: "PENDING_DEDUCTION",
         });
       }
@@ -1892,27 +1988,21 @@ export class CourierService {
           ctx.tx
         );
       }
+
+      if (plan) {
+        if (!pdfRequest) {
+          throw new NotFoundError("Request not found");
+        }
+        await this.closeRequest.commit(
+          ctx,
+          plan,
+          new ExecutionCompletedEvent({ requestId, actorId: uploadedBy, execution: result, request: pdfRequest })
+        );
+      }
     });
 
     if (!result) {
       throw new Error("Failed to save execution from PDF report: database returned no rows.");
-    }
-
-    const isCompleted = isCompletedStatus(merged.installationStatus);
-    if (isCompleted && pdfRequest) {
-      const workflowResult = await CourierWorkflow.execute({
-        requestId,
-        actorId: uploadedBy,
-        execution: result,
-        request: pdfRequest,
-      });
-
-      if (workflowResult.sideEffectErrors.length > 0) {
-        console.warn(
-          `[Workflow] PDF apply for request ${requestId} completed with warnings:`,
-          workflowResult.sideEffectErrors
-        );
-      }
     }
 
     return this.getRequestById(requestId);
@@ -2206,7 +2296,38 @@ export class CourierService {
       customerSignature?: string;
     }
   ): Promise<any> {
-    return this.uow.execute(async (ctx) => {
+    // A SUCCESS attempt closes the request. Its deduction covers exactly the
+    // serials installed by this attempt — never every RECEIVED request item.
+    let plan: ClosePlan | null = null;
+    if (data.status === "SUCCESS") {
+      const request = await this.requestsRepo.findRequestById(requestId);
+      if (!request) throw new NotFoundError("Request not found");
+      const execution = await this.executionsRepo.findExecutionByRequestId(requestId);
+      if (!execution) throw new NotFoundError("Execution not found");
+
+      const closeItems: CloseItem[] = [];
+      const device = await CourierService.storedSerial(data.snInstalled || execution.sn);
+      if (device) closeItems.push({ serialNumber: device, role: "device" });
+      const simRaw = data.simInstalled || execution.simSerial;
+      const sim = CourierService.looksLikeSerial(simRaw) ? await CourierService.storedSerial(simRaw) : null;
+      if (sim && sim !== device) closeItems.push({ serialNumber: sim, role: "sim" });
+      if (!device) {
+        throw new GuardValidationError("الرقم التسلسلي للجهاز (SN) مطلوب عند تسجيل تركيب ناجح.", "snInstalled");
+      }
+
+      plan = await this.closeRequest.plan({
+        requestId,
+        actorId,
+        request,
+        // Same technician derivation the InventorySubscriber used; the engine
+        // rejects it if it disagrees with the custodian of the serials.
+        technicianCode: execution.technicianCode || execution.salesTechnician || request.tecName || "unknown",
+        closeItems,
+        requestItemsToBind: [],
+      });
+    }
+
+    return this.closeRequest.run(async (ctx) => {
       const request = await ctx.requestsRepository.findRequestById(requestId);
       if (!request) throw new NotFoundError("Request not found");
 
@@ -2262,18 +2383,6 @@ export class CourierService {
           throw new OptimisticLockException("courier_executions", execution.id, execution.version);
         }
 
-        // Update request items status to INSTALLED
-        const items = await ctx.requestsRepository.findRequestItems(requestId);
-        for (const item of items) {
-          if (item.status === "RECEIVED") {
-            await ctx.requestsRepository.updateRequestItem(item.id, {
-              status: "INSTALLED",
-              installedAt: new Date(),
-              deliveredAt: new Date(),
-            });
-          }
-        }
-
         await ctx.dashboardRepository.insertAuditLog({
           tableName: "courier_executions",
           recordId: execution.id,
@@ -2284,16 +2393,20 @@ export class CourierService {
           changedBy: actorId
         });
 
-        // Publish ExecutionCompletedEvent to trigger InventoryEngine auto-deduction
-        const eventBus = EventBus.getInstance();
-        await eventBus.publish(
+        // This attempt's request items -> INSTALLED, deduction, CLOSED_SUCCESS and
+        // ExecutionCompletedEvent, all on this transaction (closeRequest.commit).
+        if (!plan) {
+          throw new Error("SUCCESS attempt reached its transaction without a close plan.");
+        }
+        await this.closeRequest.commit(
+          ctx,
+          plan,
           new ExecutionCompletedEvent({
             requestId,
             actorId,
             execution: updatedExecution,
             request,
-          }),
-          ctx.tx
+          })
         );
       } else {
         const finalStatus = data.failureReasonCode || "FAILED_ATTEMPT";

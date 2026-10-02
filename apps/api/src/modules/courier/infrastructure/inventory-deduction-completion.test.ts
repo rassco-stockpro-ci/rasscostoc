@@ -11,9 +11,18 @@
  */
 import { describe, expect, it, beforeAll, afterEach } from "vitest";
 import { randomUUID } from "crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@core/config/db";
-import { users, itemTypes, items, courierRequests, courierExecutions, inventoryDeductionCompletions } from "@shared/schema";
+import {
+  users,
+  itemTypes,
+  items,
+  courierRequests,
+  courierExecutions,
+  inventoryDeductionCompletions,
+  technicianMovingInventoryEntries,
+  stockMovements,
+} from "@shared/schema";
 import { InventoryEngine } from "../application/inventory/inventory.engine";
 import { DevicesServiceAdapter } from "./adapters/DevicesServiceAdapter";
 import { SerializedItemsAdapter } from "./adapters/SerializedItemsAdapter";
@@ -44,6 +53,8 @@ describe("OPS-REMED-E4-P2 — durable completion evidence and mapper round-trip"
       await db.delete(itemTypes).where(eq(itemTypes.id, id)).catch(() => {});
     }
     for (const id of createdUserIds.splice(0)) {
+      await db.delete(stockMovements).where(eq(stockMovements.technicianId, id)).catch(() => {});
+      await db.delete(technicianMovingInventoryEntries).where(eq(technicianMovingInventoryEntries.technicianId, id)).catch(() => {});
       await db.delete(users).where(eq(users.id, id)).catch(() => {});
     }
   });
@@ -126,6 +137,12 @@ describe("OPS-REMED-E4-P2 — durable completion evidence and mapper round-trip"
 
   it("2. general-inventory-only deduction ALSO produces valid completion evidence (the exact gap A.6 closed)", async () => {
     const tech = await seedTechnician("gen");
+    // The paper roll is now really deducted, so the technician must hold one.
+    await db
+      .insert(itemTypes)
+      .values({ id: "rollPaper", nameAr: "ورق الطباعة", nameEn: "Roll Paper", category: "papers", unitsPerBox: 50 })
+      .onConflictDoNothing();
+    await db.insert(technicianMovingInventoryEntries).values({ technicianId: tech, itemTypeId: "rollPaper", boxes: 0, units: 1 });
     const engine = makeEngine();
     const sourceEventId = randomUUID();
     const requestId = 940100 + Math.floor(Math.random() * 100000);
@@ -145,6 +162,11 @@ describe("OPS-REMED-E4-P2 — durable completion evidence and mapper round-trip"
     const [row] = await db.select().from(inventoryDeductionCompletions).where(eq(inventoryDeductionCompletions.requestId, requestId));
     expect(row).toBeDefined();
     expect(row!.serializedItemCount).toBe(0);
+    const [stock] = await db
+      .select({ units: technicianMovingInventoryEntries.units })
+      .from(technicianMovingInventoryEntries)
+      .where(and(eq(technicianMovingInventoryEntries.technicianId, tech), eq(technicianMovingInventoryEntries.itemTypeId, "rollPaper")));
+    expect(stock!.units).toBe(0);
   }, 30000);
 
   it("3. duplicate deduct() for the same requestId cannot create a second completion row (unique constraint)", async () => {

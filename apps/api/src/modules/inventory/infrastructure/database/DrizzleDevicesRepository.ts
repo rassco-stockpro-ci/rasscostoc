@@ -6,6 +6,7 @@ import {
   receivedDevices,
   users,
   regions,
+  itemTypes,
   technicianFixedInventoryEntries,
   technicianMovingInventoryEntries,
   stockMovements,
@@ -15,6 +16,7 @@ import {
   type InsertReceivedDevice
 } from "@shared/schema";
 import type { IDevicesRepository } from "@modules/inventory/application/devices/contracts/IDevicesRepository";
+import { planConsumableDeduction } from "@modules/inventory/domain/consumables/consumable-deduction";
 
 export class DrizzleDevicesRepository implements IDevicesRepository {
   private get db() {
@@ -1283,6 +1285,105 @@ export class DrizzleDevicesRepository implements IDevicesRepository {
         });
       }
       return results;
+    };
+
+    if (externalTx) {
+      return runBody(externalTx);
+    }
+    return await this.db.transaction(runBody);
+  }
+
+  async deductTechnicianConsumables(data: {
+    technicianId: string;
+    items: { itemTypeId: string; quantity: number }[];
+    actorId: string;
+    notes: string;
+  }, externalTx?: any): Promise<void> {
+    const { technicianId, actorId, notes } = data;
+    // Stable lock order across overlapping deductions for the same technician.
+    const items = [...data.items].sort((a, b) =>
+      a.itemTypeId < b.itemTypeId ? -1 : a.itemTypeId > b.itemTypeId ? 1 : 0
+    );
+
+    const runBody = async (tx: any) => {
+      for (const { itemTypeId, quantity } of items) {
+        const [itemType] = await tx
+          .select({ unitsPerBox: itemTypes.unitsPerBox })
+          .from(itemTypes)
+          .where(eq(itemTypes.id, itemTypeId))
+          .limit(1);
+        if (!itemType) {
+          const err: any = new Error(`[DrizzleDevicesRepository] Unknown consumable item type "${itemTypeId}".`);
+          err.code = "DEDUCT_INTEGRITY_CONFLICT";
+          throw err;
+        }
+
+        // (technicianId, itemTypeId) is not unique on these tables, so every
+        // matching row is locked and used, moving rows first.
+        const movingRows = await tx
+          .select()
+          .from(technicianMovingInventoryEntries)
+          .where(and(
+            eq(technicianMovingInventoryEntries.technicianId, technicianId),
+            eq(technicianMovingInventoryEntries.itemTypeId, itemTypeId)
+          ))
+          .orderBy(technicianMovingInventoryEntries.id)
+          .for("update");
+        const fixedRows = await tx
+          .select()
+          .from(technicianFixedInventoryEntries)
+          .where(and(
+            eq(technicianFixedInventoryEntries.technicianId, technicianId),
+            eq(technicianFixedInventoryEntries.itemTypeId, itemTypeId)
+          ))
+          .orderBy(technicianFixedInventoryEntries.id)
+          .for("update");
+
+        const sources: { row: any; kind: "moving" | "fixed" }[] = [
+          ...movingRows.map((row: any) => ({ row, kind: "moving" as const })),
+          ...fixedRows.map((row: any) => ({ row, kind: "fixed" as const })),
+        ];
+        const plan = planConsumableDeduction(
+          quantity,
+          itemType.unitsPerBox,
+          sources.map((s) => ({ boxes: s.row.boxes, units: s.row.units }))
+        );
+        if (!plan.ok) {
+          const err: any = new Error(
+            `[DrizzleDevicesRepository] Insufficient consumable stock for technician ${technicianId}, itemType ${itemTypeId}: required ${quantity}, available ${plan.available}.`
+          );
+          err.code = "DEDUCT_INSUFFICIENT_STOCK";
+          throw err;
+        }
+
+        const takenByKind = { moving: 0, fixed: 0 };
+        for (let i = 0; i < sources.length; i++) {
+          if (plan.taken[i] === 0) continue;
+          const { row, kind } = sources[i];
+          const table = kind === "moving" ? technicianMovingInventoryEntries : technicianFixedInventoryEntries;
+          await tx
+            .update(table)
+            .set({ boxes: plan.after[i].boxes, units: plan.after[i].units, updatedAt: new Date() })
+            .where(eq(table.id, row.id));
+          takenByKind[kind] += plan.taken[i];
+        }
+
+        for (const kind of ["moving", "fixed"] as const) {
+          if (takenByKind[kind] === 0) continue;
+          await tx.insert(stockMovements).values({
+            technicianId,
+            itemType: itemTypeId,
+            packagingType: "unit",
+            quantity: takenByKind[kind],
+            fromInventory: `technician:${technicianId}:${kind}`,
+            toInventory: "customer",
+            reason: "courier_consumables_delivery",
+            performedBy: actorId,
+            notes,
+            createdAt: new Date(),
+          });
+        }
+      }
     };
 
     if (externalTx) {
