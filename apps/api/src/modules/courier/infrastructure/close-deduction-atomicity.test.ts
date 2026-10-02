@@ -105,8 +105,10 @@ describe("Close + deduction atomicity, event durability, guards, orphan items, i
   /** Item in active custody. `order` (one hex digit) fixes the lock order (items are locked by id). */
   async function seedItem(ownerId: string, serialNumber: string, order: string = "0") {
     const itemTypeId = randomUUID();
+    // SIM fixtures use HDS / HDMS serial prefixes; everything else is a device.
+    const category = /^HDM?S/.test(serialNumber) ? "sim" : "devices";
     await db.insert(itemTypes).values({
-      id: itemTypeId, nameAr: `نوع-${itemTypeId.slice(0, 8)}`, nameEn: `Type-${itemTypeId.slice(0, 8)}`, category: "device",
+      id: itemTypeId, nameAr: `نوع-${itemTypeId.slice(0, 8)}`, nameEn: `Type-${itemTypeId.slice(0, 8)}`, category,
     });
     const id = order + randomUUID().slice(1);
     await db.insert(items).values({
@@ -399,8 +401,11 @@ describe("Close + deduction atomicity, event durability, guards, orphan items, i
 
     expect(decision.techUser?.id).toBe(s.tech.id);
     expect(decision.closeItems).toEqual([
-      { serialNumber: s.device, role: "device" },
-      { serialNumber: s.sim, role: "sim" },
+      { serialNumber: s.device, role: "device", itemId: s.deviceId },
+      { serialNumber: s.sim, role: "sim", itemId: s.simId },
+    ]);
+    expect(decision.units).toEqual([
+      { unitNo: 1, device: { itemId: s.deviceId, serialNumber: s.device }, sim: { itemId: s.simId, serialNumber: s.sim }, simWaived: false, tid: null },
     ]);
     expect(decision.requestItemsToBind).toHaveLength(2);
     expect(await db.select().from(courierRequestItems).where(eq(courierRequestItems.requestId, s.requestId))).toHaveLength(0);

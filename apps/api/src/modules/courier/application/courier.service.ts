@@ -10,7 +10,9 @@ import {
   type CompleteDeviceInput,
 } from "./ai-engine/courier-pdf-extraction.adapter";
 import { parseRawDataWorkbook, buildExportWorkbook } from "./excel.helper";
-import { CompletionGuard, GuardValidationError, isCompletedStatus, type CloseItem } from "./guards/CompletionGuard";
+import { CompletionGuard, GuardValidationError, isCompletedStatus } from "./guards/CompletionGuard";
+import { explicitPairingRequired, serialListsOf, unitsFromLegacyLists, unitsFromPayload, unitsFromPdfDevices } from "./close/close-units";
+import type { CloseUnitsPlan } from "../domain/execution-unit";
 import { normalizeSerialList } from "./guards/guard.types";
 import type { InventoryEngine } from "./inventory/inventory.engine";
 import { CloseRequestUseCase, type ClosePlan } from "./close/close-request.use-case";
@@ -50,6 +52,21 @@ export class CourierService {
 
   /** The close semantics shared by every channel (portal, PDF approve/apply, mobile). */
   private readonly closeRequest: CloseRequestUseCase;
+
+  /**
+   * Explicit units of a payload: units[] (the contract) or pairs[] (older
+   * explicit pairing: [{ sn, simSerial }]). Undefined when neither is sent —
+   * the legacy fields are then interpreted by the custody guard.
+   */
+  private static explicitUnits(data: any): CloseUnitsPlan | undefined {
+    if (data?.units !== undefined) return unitsFromPayload(data.units);
+    if (Array.isArray(data?.pairs) && data.pairs.length > 0) {
+      return unitsFromPdfDevices(
+        data.pairs.map((p: any) => ({ sn: p?.sn, sim_serial: p?.simSerial, tid: p?.tid, sim_waived: p?.simWaived }))
+      );
+    }
+    return undefined;
+  }
 
   /** The stored form of a serial (NcD == NCD), or the trimmed input when no item matches. */
   private static async storedSerial(raw?: string | null): Promise<string | null> {
@@ -919,16 +936,15 @@ export class CourierService {
     const version = data?.version;
     const sanitized = CourierService.sanitizeExecutionPayload(data);
     const isCompleted = isCompletedStatus(sanitized.installationStatus);
-    // OPS-REMED-E3: `pairs` is not a courier_executions DB column (no
-    // migration authorized in this gate) — it is read from the RAW,
-    // unsanitized payload and carried only in-memory through to the
-    // workflow/event context for InventoryEngine's pairing validation.
-    const pairs = Array.isArray(data?.pairs) ? data.pairs : undefined;
+    // What the close installs: units[] (the contract) or explicit pairs[];
+    // otherwise the legacy fields below, which the custody guard turns into
+    // units (paired by order, flagged LEGACY_INFERRED).
+    const units = isCompleted ? CourierService.explicitUnits(data) : undefined;
 
-    // Multi-serial close: arrays from portal; fall back to scalar sn / simSerial.
     // Incomplete statuses never require serials and never deduct — omit serial fields from write.
     let deviceSerials = normalizeSerialList(data?.deviceSerials, data?.sn, sanitized.sn);
     let simSerials = normalizeSerialList(data?.simSerials, data?.simSerial, sanitized.simSerial);
+    if (units) ({ deviceSerials, simSerials } = serialListsOf(units));
 
     if (!isCompleted) {
       delete sanitized.sn;
@@ -936,15 +952,16 @@ export class CourierService {
       deviceSerials = [];
       simSerials = [];
     } else {
-      sanitized.sn = deviceSerials[0] ?? null;
-      sanitized.simSerial = simSerials[0] ?? null;
+      // The execution row keeps the first unit in sn / sim_serial (legacy readers).
+      sanitized.sn = units ? units.units[0]!.deviceSerial : deviceSerials[0] ?? null;
+      sanitized.simSerial = units ? units.units[0]!.simSerial : simSerials[0] ?? null;
     }
 
     // ─── Guard Validation Layer (read-only) ──────────────────────────────────
     const decision = await CompletionGuard.run({
       requestId,
       enteredBy,
-      executionData: { ...sanitized, deviceSerials, simSerials },
+      executionData: { ...sanitized, deviceSerials, simSerials, units },
       request,
       existingExecution: existing ?? null,
       requestsRepo: this.requestsRepo,
@@ -967,7 +984,9 @@ export class CourierService {
           technicianCode: CloseRequestUseCase.requireTechnician(techUser).username,
           closeItems: decision.closeItems,
           requestItemsToBind: decision.requestItemsToBind,
-          pairs,
+          units: decision.units,
+          pairingSource: decision.pairingSource,
+          countWarning: decision.countWarning,
         })
       : null;
 
@@ -1030,7 +1049,7 @@ export class CourierService {
           new ExecutionCompletedEvent({
             requestId,
             actorId: enteredBy,
-            execution: pairs ? { ...result, pairs } : result,
+            execution: result,
             request,
           })
         );
@@ -1609,10 +1628,9 @@ export class CourierService {
     const version = (executionPayload as any)?.version;
     const sanitized = CourierService.sanitizeExecutionPayload(executionPayload);
     const isCompleted = isCompletedStatus(sanitized.installationStatus);
-    const pairs = Array.isArray((executionPayload as any)?.pairs) ? (executionPayload as any).pairs : undefined;
-
-    let deviceSerials = normalizeSerialList((executionPayload as any)?.deviceSerials, (executionPayload as any)?.sn, sanitized.sn);
-    let simSerials = normalizeSerialList((executionPayload as any)?.simSerials, (executionPayload as any)?.simSerial, sanitized.simSerial);
+    // The approved device cards are explicit units (device + SIM + TID each).
+    const units = unitsFromPdfDevices(devices);
+    let { deviceSerials, simSerials } = serialListsOf(units);
 
     if (!isCompleted) {
       delete sanitized.sn;
@@ -1620,14 +1638,14 @@ export class CourierService {
       deviceSerials = [];
       simSerials = [];
     } else {
-      sanitized.sn = deviceSerials[0] ?? null;
-      sanitized.simSerial = simSerials[0] ?? null;
+      sanitized.sn = units.units[0]!.deviceSerial;
+      sanitized.simSerial = units.units[0]!.simSerial;
     }
 
     const decision = await CompletionGuard.run({
       requestId,
       enteredBy,
-      executionData: { ...sanitized, deviceSerials, simSerials },
+      executionData: { ...sanitized, deviceSerials, simSerials, units },
       request,
       existingExecution: existing ?? null,
       requestsRepo: this.requestsRepo,
@@ -1649,7 +1667,9 @@ export class CourierService {
           technicianCode: CloseRequestUseCase.requireTechnician(techUser).username,
           closeItems: decision.closeItems,
           requestItemsToBind: decision.requestItemsToBind,
-          pairs,
+          units: decision.units,
+          pairingSource: decision.pairingSource,
+          countWarning: decision.countWarning,
         })
       : null;
 
@@ -1749,7 +1769,7 @@ export class CourierService {
       // the same class of self-deadlock already found and fixed in E3.
       // ctx.outbox.enqueue() (the transactional outbox) has no such branch — it only ever
       // performs a plain INSERT bound to ctx.tx.
-      const executionForEvent = pairs ? { ...result, pairs } : result;
+      const executionForEvent = result;
       await ctx.outbox.enqueue(
         new ExecutionSavedEvent({ requestId, actorId: enteredBy, execution: executionForEvent, request })
       );
@@ -1905,13 +1925,19 @@ export class CourierService {
       if (!request) {
         throw new NotFoundError("Request not found");
       }
+      const units = CourierService.explicitUnits(fields);
+      if (units) {
+        merged.sn = units.units[0]!.deviceSerial;
+        merged.simSerial = units.units[0]!.simSerial;
+      }
       const decision = await CompletionGuard.run({
         requestId,
         enteredBy: uploadedBy,
         executionData: {
           ...merged,
-          deviceSerials: normalizeSerialList(undefined, merged.sn),
-          simSerials: normalizeSerialList(undefined, merged.simSerial),
+          ...(units
+            ? { ...serialListsOf(units), units }
+            : { deviceSerials: normalizeSerialList(undefined, merged.sn), simSerials: normalizeSerialList(undefined, merged.simSerial) }),
         },
         request,
         existingExecution: existing ?? null,
@@ -1929,6 +1955,9 @@ export class CourierService {
         technicianCode: techUser.username,
         closeItems: decision.closeItems,
         requestItemsToBind: decision.requestItemsToBind,
+        units: decision.units,
+        pairingSource: decision.pairingSource,
+        countWarning: decision.countWarning,
       });
     }
 
@@ -2285,6 +2314,8 @@ export class CourierService {
       notes?: string;
       snInstalled?: string;
       simInstalled?: string;
+      /** units[] contract: N devices, each with its SIM (or simWaived) and TID. */
+      units?: unknown;
       gpsLatitude?: number;
       gpsLongitude?: number;
       batteryLevel?: number;
@@ -2299,31 +2330,67 @@ export class CourierService {
     // A SUCCESS attempt closes the request. Its deduction covers exactly the
     // serials installed by this attempt — never every RECEIVED request item.
     let plan: ClosePlan | null = null;
+    let primary: { sn: string; simSerial: string | null } | null = null;
     if (data.status === "SUCCESS") {
       const request = await this.requestsRepo.findRequestById(requestId);
       if (!request) throw new NotFoundError("Request not found");
       const execution = await this.executionsRepo.findExecutionByRequestId(requestId);
       if (!execution) throw new NotFoundError("Execution not found");
 
-      const closeItems: CloseItem[] = [];
-      const device = await CourierService.storedSerial(data.snInstalled || execution.sn);
-      if (device) closeItems.push({ serialNumber: device, role: "device" });
-      const simRaw = data.simInstalled || execution.simSerial;
-      const sim = CourierService.looksLikeSerial(simRaw) ? await CourierService.storedSerial(simRaw) : null;
-      if (sim && sim !== device) closeItems.push({ serialNumber: sim, role: "sim" });
-      if (!device) {
+      // units[] when the app sends them; otherwise the attempt's single
+      // device / SIM (or the execution's stored ones).
+      let units: CloseUnitsPlan | null;
+      if (data.units !== undefined) {
+        units = unitsFromPayload(data.units);
+      } else {
+        const device = (data.snInstalled || execution.sn || "").trim();
+        if (!device) {
+          throw new GuardValidationError("الرقم التسلسلي للجهاز (SN) مطلوب عند تسجيل تركيب ناجح.", "snInstalled");
+        }
+        const simRaw = data.simInstalled || execution.simSerial;
+        const sim = CourierService.looksLikeSerial(simRaw) ? (simRaw as string).trim() : null;
+        units = unitsFromLegacyLists([device], sim && sim !== device ? [sim] : [], { requireExplicitPairing: explicitPairingRequired() });
+      }
+      if (!units) {
         throw new GuardValidationError("الرقم التسلسلي للجهاز (SN) مطلوب عند تسجيل تركيب ناجح.", "snInstalled");
       }
+      primary = { sn: units.units[0]!.deviceSerial, simSerial: units.units[0]!.simSerial };
+
+      // Same read-only guards as every other close channel.
+      const decision = await CompletionGuard.run({
+        requestId,
+        enteredBy: actorId,
+        executionData: {
+          installationStatus: "Installation Completed",
+          sn: primary.sn,
+          simSerial: primary.simSerial ?? undefined,
+          ...serialListsOf(units),
+          units,
+          technicianCode: execution.technicianCode ?? undefined,
+        },
+        request,
+        existingExecution: execution,
+        requestsRepo: this.requestsRepo,
+        dashboardRepo: this.dashboardRepo,
+        inventoryPort: this.inventoryPort,
+      });
 
       plan = await this.closeRequest.plan({
         requestId,
         actorId,
         request,
-        // Same technician derivation the InventorySubscriber used; the engine
-        // rejects it if it disagrees with the custodian of the serials.
-        technicianCode: execution.technicianCode || execution.salesTechnician || request.tecName || "unknown",
-        closeItems,
-        requestItemsToBind: [],
+        // The execution's recorded technician: the engine rejects it if it
+        // disagrees with the custodian of the serials.
+        technicianCode:
+          execution.technicianCode ||
+          execution.salesTechnician ||
+          request.tecName ||
+          CloseRequestUseCase.requireTechnician(decision.techUser).username,
+        closeItems: decision.closeItems,
+        requestItemsToBind: decision.requestItemsToBind,
+        units: decision.units,
+        pairingSource: decision.pairingSource,
+        countWarning: decision.countWarning,
       });
     }
 
@@ -2368,8 +2435,8 @@ export class CourierService {
           requestId,
           {
             installationStatus: finalStatus,
-            sn: data.snInstalled || execution.sn,
-            simSerial: data.simInstalled || execution.simSerial,
+            sn: primary?.sn ?? (data.snInstalled || execution.sn),
+            simSerial: primary ? primary.simSerial : data.simInstalled || execution.simSerial,
             responseReasonCode: null,
             customerNotes: data.notes || execution.customerNotes,
             extraField1: data.evidencePhotos ? JSON.stringify(data.evidencePhotos) : execution.extraField1,

@@ -91,7 +91,7 @@ describe("OPS-REMED-E12 — real HTTP PDF approval/rejection conflict responses"
       id: itemTypeId,
       nameAr: `نوع-${itemTypeId.slice(0, 8)}`,
       nameEn: `Type-${itemTypeId.slice(0, 8)}`,
-      category: "device",
+      category: "devices",
     });
 
     const itemId = randomUUID();
@@ -104,10 +104,17 @@ describe("OPS-REMED-E12 — real HTTP PDF approval/rejection conflict responses"
       currentOwnerId: ownerId,
     });
 
+    const simItemTypeId = randomUUID();
+    await db.insert(itemTypes).values({
+      id: simItemTypeId,
+      nameAr: `شريحة-${simItemTypeId.slice(0, 8)}`,
+      nameEn: `Sim-${simItemTypeId.slice(0, 8)}`,
+      category: "sim",
+    });
     // Its SIM, in the same custody (the bodies below send a complete pair).
     await db.insert(items).values({
       id: randomUUID(),
-      itemTypeId,
+      itemTypeId: simItemTypeId,
       serialNumber: `${serialNumber}S`,
       barcode: `${serialNumber}S-BAR`,
       status: "RECEIVED_BY_TECHNICIAN",

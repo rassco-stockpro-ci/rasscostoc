@@ -4,7 +4,7 @@
  */
 
 import { and, eq, or, sql, type SQL } from "drizzle-orm";
-import { courierExecutions, courierRequests } from "@shared/schema";
+import { courierExecutionUnits, courierExecutions, courierRequests } from "@shared/schema";
 import type { ListFilters } from "../domain/courier.types";
 
 /** Normalize user input: trim, collapse whitespace. */
@@ -80,7 +80,16 @@ export function buildSmartSearchCondition(rawQ: string): SQL | undefined {
          OR ${courierExecutions.simSerial} LIKE ${prefix}
     )`;
 
-    return or(requestSide!, executionHit);
+    // A close installs N units: every device and SIM of every unit is searchable, not only the first.
+    const unitHit = sql`${courierRequests.id} IN (
+      SELECT ${courierExecutionUnits.requestId} FROM ${courierExecutionUnits}
+      WHERE ${courierExecutionUnits.deviceSerial} = ${q}
+         OR ${courierExecutionUnits.simSerial} = ${q}
+         OR ${courierExecutionUnits.deviceSerial} LIKE ${prefix}
+         OR ${courierExecutionUnits.simSerial} LIKE ${prefix}
+    )`;
+
+    return or(requestSide!, executionHit, unitHit);
   }
 
   // Free-text / name: prefix match only (no leading %)
@@ -99,6 +108,11 @@ export function buildSmartSearchCondition(rawQ: string): SQL | undefined {
       WHERE ${courierExecutions.sn} LIKE ${prefix}
          OR ${courierExecutions.simSerial} LIKE ${prefix}
          OR ${courierExecutions.salesTechnician} LIKE ${prefix}
+    )`,
+    sql`${courierRequests.id} IN (
+      SELECT ${courierExecutionUnits.requestId} FROM ${courierExecutionUnits}
+      WHERE ${courierExecutionUnits.deviceSerial} LIKE ${prefix}
+         OR ${courierExecutionUnits.simSerial} LIKE ${prefix}
     )`
   );
 }

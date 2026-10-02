@@ -135,6 +135,8 @@ export interface CourierRequestItem {
   requestId: number;
   itemType: string;
   inventoryItemId: number | null;
+  /** The inventory item this row stands for (replaces the dead inventoryItemId). */
+  itemId: string | null;
   serialNumber: string | null;
   simSerial: string | null;
   quantity: number;
@@ -144,8 +146,26 @@ export interface CourierRequestItem {
   installedAt: Date | null;
   deliveredAt: Date | null;
   technicianId: string | null;
+  /** The installation unit this item was installed in (set together with INSTALLED). */
+  executionUnitId: number | null;
   createdAt: Date | null;
   updatedAt: Date | null;
+}
+
+/** One installed terminal of a close: one device, at most one SIM, optional TID. */
+export interface CourierExecutionUnit {
+  id: number;
+  requestId: number;
+  executionId: number;
+  unitNo: number;
+  deviceItemId: string;
+  deviceSerial: string;
+  simItemId: string | null;
+  simSerial: string | null;
+  simWaived: boolean;
+  tid: string | null;
+  pairingSource: "EXPLICIT" | "LEGACY_INFERRED" | "LEGACY_BACKFILL";
+  createdAt: Date | null;
 }
 
 export interface CourierExecution {

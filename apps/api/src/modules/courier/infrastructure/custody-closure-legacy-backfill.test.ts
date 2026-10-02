@@ -154,12 +154,12 @@ describe("OPS-REMED-E4-P2 — legacy classification and backfill", () => {
       status: deliveredStatus,
       currentOwnerId: actorId,
     });
-    await db.insert(courierRequestItems).values({
-      requestId: request.id,
-      itemType: "POS",
-      serialNumber: serial,
-      status: "RECEIVED",
-    });
+    // Raw SQL with explicit columns: this historical database predates
+    // columns the current Drizzle schema would list (e.g. migration 0060).
+    await pool.query(
+      "INSERT INTO courier_request_items (request_id, item_type, serial_number, status) VALUES ($1, 'POS', $2, 'RECEIVED')",
+      [request.id, serial]
+    );
     // Legacy pre-P2 shape: no custodyClosureStatus at all — genuinely NULL
     // on this pre-P4 historical database. Cast `as any` because the
     // shared Drizzle schema type is now `.notNull()` post-P4; this
@@ -281,12 +281,10 @@ describe("OPS-REMED-E4-P2 — legacy classification and backfill", () => {
       "INSERT INTO courier_requests (customer_name, incident_number) VALUES ($1, $2) RETURNING id",
       ["E4 P2 Legacy Missing", `E4-P2-LEGMS-${randomUUID().slice(0, 8)}`]
       );
-    await db.insert(courierRequestItems).values({
-      requestId: request.id,
-      itemType: "POS",
-      serialNumber: "NONEXISTENT-SERIAL-" + randomUUID().slice(0, 8),
-      status: "RECEIVED",
-    });
+    await pool.query(
+      "INSERT INTO courier_request_items (request_id, item_type, serial_number, status) VALUES ($1, 'POS', $2, 'RECEIVED')",
+      [request.id, "NONEXISTENT-SERIAL-" + randomUUID().slice(0, 8)]
+    );
     const { status } = await classifyOneRow(pool, request.id);
     expect(status).toBe("RECONCILIATION_REQUIRED");
   });

@@ -23,13 +23,14 @@
 
 import { ExecutionGuard } from "./ExecutionGuard";
 import { TechnicianGuard } from "./TechnicianGuard";
-import { CustodyGuard, type CloseItem, type RequestItemBinding } from "./CustodyGuard";
+import { CustodyGuard, type CloseItem, type RequestItemBinding, type UnitCountWarning } from "./CustodyGuard";
+import type { PairingSource, ResolvedCloseUnit } from "../../domain/execution-unit";
 import { ConsumablesGuard } from "./ConsumablesGuard";
 import type { GuardContext, TechUser } from "./guard.types";
 
 export { GuardValidationError, isCompletedStatus } from "./guard.types";
 export type { GuardContext, TechUser } from "./guard.types";
-export type { CloseItem, RequestItemBinding } from "./CustodyGuard";
+export type { CloseItem, RequestItemBinding, UnitCountWarning } from "./CustodyGuard";
 
 export interface CompletionDecision {
   /** Resolved technician when the status is completed, null otherwise. */
@@ -38,6 +39,10 @@ export interface CompletionDecision {
   closeItems: CloseItem[];
   /** courier_request_items rows to create inside the close transaction. */
   requestItemsToBind: RequestItemBinding[];
+  /** The installation units (device [+ SIM]) this close installs, resolved to inventory items. */
+  units: ResolvedCloseUnit[];
+  pairingSource: PairingSource | null;
+  countWarning: UnitCountWarning | null;
 }
 
 export class CompletionGuard {
@@ -53,7 +58,7 @@ export class CompletionGuard {
     // 2. Technician identity resolution (async — DB lookup)
     const techUser = await TechnicianGuard.resolve(ctx);
     if (!techUser) {
-      return { techUser: null, closeItems: [], requestItemsToBind: [] };
+      return { techUser: null, closeItems: [], requestItemsToBind: [], units: [], pairingSource: null, countWarning: null };
     }
 
     // 3. Custody validation (async — DB lookup + audit log on failure)
@@ -61,6 +66,13 @@ export class CompletionGuard {
     // 4. Consumables balance (async — DB lookup)
     await ConsumablesGuard.validate(ctx, techUser);
 
-    return { techUser, closeItems: custody.items, requestItemsToBind: custody.requestItemsToBind };
+    return {
+      techUser,
+      closeItems: custody.items,
+      requestItemsToBind: custody.requestItemsToBind,
+      units: custody.units,
+      pairingSource: custody.pairingSource,
+      countWarning: custody.countWarning,
+    };
   }
 }

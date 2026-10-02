@@ -98,7 +98,7 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
       id: itemTypeId,
       nameAr: `نوع-${itemTypeId.slice(0, 8)}`,
       nameEn: `Type-${itemTypeId.slice(0, 8)}`,
-      category: "device",
+      category: "devices",
     });
     createdItemTypeIds.push(itemTypeId);
 
@@ -114,10 +114,17 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
     createdItemIds.push(itemId);
 
     // Its SIM, in the same custody (completeBody sends a complete pair).
+    const simItemTypeId = randomUUID();
+    await db.insert(itemTypes).values({
+      id: simItemTypeId,
+      nameAr: `شريحة-${simItemTypeId.slice(0, 8)}`,
+      nameEn: `Sim-${simItemTypeId.slice(0, 8)}`,
+      category: "sim",
+    });
     const simItemId = randomUUID();
     await db.insert(items).values({
       id: simItemId,
-      itemTypeId,
+      itemTypeId: simItemTypeId,
       serialNumber: `${serialNumber}S`,
       barcode: `${serialNumber}S-BAR`,
       status: "RECEIVED_BY_TECHNICIAN",

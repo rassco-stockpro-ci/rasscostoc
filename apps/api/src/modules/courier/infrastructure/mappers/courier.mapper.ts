@@ -91,6 +91,7 @@ export class CourierRequestItemMapper {
       requestId: row.requestId,
       itemType: row.itemType,
       inventoryItemId: row.inventoryItemId ?? null,
+      itemId: row.itemId ?? null,
       serialNumber: row.serialNumber ?? null,
       simSerial: row.simSerial ?? null,
       quantity: row.quantity ?? 1,
@@ -100,6 +101,7 @@ export class CourierRequestItemMapper {
       installedAt: row.installedAt ? new Date(row.installedAt) : null,
       deliveredAt: row.deliveredAt ? new Date(row.deliveredAt) : null,
       technicianId: row.technicianId ?? null,
+      executionUnitId: row.executionUnitId ?? null,
       createdAt: row.createdAt ? new Date(row.createdAt) : null,
       updatedAt: row.updatedAt ? new Date(row.updatedAt) : null,
     };
@@ -112,6 +114,8 @@ export class CourierRequestItemMapper {
     if (domain.requestId !== undefined) res.requestId = domain.requestId;
     if (domain.itemType !== undefined) res.itemType = domain.itemType;
     if (domain.inventoryItemId !== undefined) res.inventoryItemId = domain.inventoryItemId;
+    if (domain.itemId !== undefined) res.itemId = domain.itemId;
+    if (domain.executionUnitId !== undefined) res.executionUnitId = domain.executionUnitId;
     if (domain.serialNumber !== undefined) res.serialNumber = domain.serialNumber;
     if (domain.simSerial !== undefined) res.simSerial = domain.simSerial;
     if (domain.quantity !== undefined) res.quantity = domain.quantity;
