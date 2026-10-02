@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { SimTypeField } from "@/components/courier-sim-type-field";
+import { deriveSimTypes } from "@/lib/sim-type";
 import {
   Dialog,
   DialogContent,
@@ -89,6 +91,8 @@ interface RequestDetail {
 
 interface SerialLookupResult {
   found: boolean;
+  /** Exact inventory match (absent for a partial-match fallback). */
+  item?: { id: string; serialNumber: string; status: string } | null;
   normalized?: string;
   itemType?: { id: string; nameAr: string; category: string; carrierName: string | null } | null;
   technician?: { id: string; fullName: string; username: string; technicianCode: string | null } | null;
@@ -203,9 +207,8 @@ export function EditCourierExecutionModal({
             salesTechnician: data.technician!.fullName,
           }));
         }
-        if (role === "sim" && data.found && data.itemType?.carrierName) {
-          setForm((prev) => ({ ...prev, simType: data.itemType!.carrierName! }));
-        }
+        // SIM type is NOT written into the form: it is derived from the lookup for display
+        // (SimTypeField) and re-derived from inventory by the backend on close.
       } catch {
         setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, loading: false } : r)));
         toast({ title: "تعذّر البحث", description: `فشل البحث عن الرقم: ${sn}`, variant: "destructive" });
@@ -369,7 +372,8 @@ export function EditCourierExecutionModal({
         simSerial: simSerials[0] || null,
         deviceSerials,
         simSerials,
-        simType: currentForm.simType,
+        // Restated for the backend to verify against inventory; undefined when unknown.
+        simType: deriveSimTypes(simRows).primary ?? undefined,
         customerNotes: currentForm.customerNotes,
         responseReasonCode: currentForm.responseReasonCode,
         version: currentForm.version,
@@ -571,21 +575,7 @@ export function EditCourierExecutionModal({
                           {renderSerialList("device")}
                           {renderSerialList("sim")}
 
-                          <div>
-                            <label className="block text-[10px] text-slate-450 mb-1 font-medium">نوع الشريحة</label>
-                            <select
-                              value={currentForm.simType || ""}
-                              onChange={(e) => handleChange("simType", e.target.value)}
-                              className="w-full rassco-glass border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs text-[#2D3135] outline-none focus:border-[#18B2B0]"
-                            >
-                              <option value="">اختر النوع</option>
-                              {lookups?.simTypes.map((s) => (
-                                <option key={s.id} value={s.name}>
-                                  {s.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
+                          <SimTypeField rows={simRows} />
 
                           <div>
                             <label className="block text-[10px] text-slate-450 mb-1 font-medium flex items-center gap-1">

@@ -975,6 +975,12 @@ export class CourierService {
       sanitized.technicianCode = techUser.username;
       sanitized.salesTechnician = techUser.fullName;
     }
+    // The execution row records the SIM type of unit 1's SIM FROM INVENTORY; the client's value is
+    // only compared (SIM_TYPE_MISMATCH in the custody guard) and never stored.
+    if (isCompleted) {
+      if (decision.primarySimType) sanitized.simType = decision.primarySimType;
+      else delete sanitized.simType;
+    }
 
     const plan = isCompleted
       ? await this.closeRequest.plan({
@@ -1658,6 +1664,12 @@ export class CourierService {
       sanitized.technicianCode = techUser.username;
       sanitized.salesTechnician = techUser.fullName;
     }
+    // The execution row records the SIM type of unit 1's SIM FROM INVENTORY; the client's value is
+    // only compared (SIM_TYPE_MISMATCH in the custody guard) and never stored.
+    if (isCompleted) {
+      if (decision.primarySimType) sanitized.simType = decision.primarySimType;
+      else delete sanitized.simType;
+    }
 
     const plan = isCompleted
       ? await this.closeRequest.plan({
@@ -1948,6 +1960,10 @@ export class CourierService {
       const techUser = CloseRequestUseCase.requireTechnician(decision.techUser);
       merged.technicianCode = techUser.username;
       merged.salesTechnician = techUser.fullName;
+      // The execution row records the SIM type of unit 1's SIM FROM INVENTORY; the client's value is
+      // only compared (SIM_TYPE_MISMATCH in the custody guard) and never stored.
+      if (decision.primarySimType) merged.simType = decision.primarySimType;
+      else delete merged.simType;
       plan = await this.closeRequest.plan({
         requestId,
         actorId: uploadedBy,
@@ -2316,6 +2332,8 @@ export class CourierService {
       simInstalled?: string;
       /** units[] contract: N devices, each with its SIM (or simWaived) and TID. */
       units?: unknown;
+      /** Restated SIM type: compared with inventory, never stored. */
+      simType?: string;
       gpsLatitude?: number;
       gpsLongitude?: number;
       batteryLevel?: number;
@@ -2330,7 +2348,7 @@ export class CourierService {
     // A SUCCESS attempt closes the request. Its deduction covers exactly the
     // serials installed by this attempt — never every RECEIVED request item.
     let plan: ClosePlan | null = null;
-    let primary: { sn: string; simSerial: string | null } | null = null;
+    let primary: { sn: string; simSerial: string | null; simType: string | null } | null = null;
     if (data.status === "SUCCESS") {
       const request = await this.requestsRepo.findRequestById(requestId);
       if (!request) throw new NotFoundError("Request not found");
@@ -2354,7 +2372,7 @@ export class CourierService {
       if (!units) {
         throw new GuardValidationError("الرقم التسلسلي للجهاز (SN) مطلوب عند تسجيل تركيب ناجح.", "snInstalled");
       }
-      primary = { sn: units.units[0]!.deviceSerial, simSerial: units.units[0]!.simSerial };
+      primary = { sn: units.units[0]!.deviceSerial, simSerial: units.units[0]!.simSerial, simType: null };
 
       // Same read-only guards as every other close channel.
       const decision = await CompletionGuard.run({
@@ -2364,6 +2382,7 @@ export class CourierService {
           installationStatus: "Installation Completed",
           sn: primary.sn,
           simSerial: primary.simSerial ?? undefined,
+          simType: data.simType,
           ...serialListsOf(units),
           units,
           technicianCode: execution.technicianCode ?? undefined,
@@ -2375,6 +2394,7 @@ export class CourierService {
         inventoryPort: this.inventoryPort,
       });
 
+      primary.simType = decision.primarySimType;
       plan = await this.closeRequest.plan({
         requestId,
         actorId,
@@ -2437,6 +2457,8 @@ export class CourierService {
             installationStatus: finalStatus,
             sn: primary?.sn ?? (data.snInstalled || execution.sn),
             simSerial: primary ? primary.simSerial : data.simInstalled || execution.simSerial,
+            // SIM type from inventory (never the client's value)
+            ...(primary?.simType ? { simType: primary.simType } : {}),
             responseReasonCode: null,
             customerNotes: data.notes || execution.customerNotes,
             extraField1: data.evidencePhotos ? JSON.stringify(data.evidencePhotos) : execution.extraField1,

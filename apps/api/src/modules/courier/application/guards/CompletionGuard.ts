@@ -41,6 +41,8 @@ export interface CompletionDecision {
   requestItemsToBind: RequestItemBinding[];
   /** The installation units (device [+ SIM]) this close installs, resolved to inventory items. */
   units: ResolvedCloseUnit[];
+  /** The SIM type to record on the execution: unit 1's SIM type from inventory (never the client's). */
+  primarySimType: string | null;
   pairingSource: PairingSource | null;
   countWarning: UnitCountWarning | null;
 }
@@ -58,7 +60,7 @@ export class CompletionGuard {
     // 2. Technician identity resolution (async — DB lookup)
     const techUser = await TechnicianGuard.resolve(ctx);
     if (!techUser) {
-      return { techUser: null, closeItems: [], requestItemsToBind: [], units: [], pairingSource: null, countWarning: null };
+      return { techUser: null, closeItems: [], requestItemsToBind: [], units: [], primarySimType: null, pairingSource: null, countWarning: null };
     }
 
     // 3. Custody validation (async — DB lookup + audit log on failure)
@@ -71,6 +73,7 @@ export class CompletionGuard {
       closeItems: custody.items,
       requestItemsToBind: custody.requestItemsToBind,
       units: custody.units,
+      primarySimType: custody.primarySimType,
       pairingSource: custody.pairingSource,
       countWarning: custody.countWarning,
     };

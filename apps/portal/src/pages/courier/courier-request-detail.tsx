@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { SimTypeField } from "@/components/courier-sim-type-field";
+import { deriveSimTypes } from "@/lib/sim-type";
 import {
   Loader2,
   ArrowRight,
@@ -158,9 +160,7 @@ export default function CourierRequestDetailPage() {
             technicianCode: data.technician!.technicianCode ?? data.technician!.username,
             salesTechnician: data.technician!.fullName,
           }));
-          if (data.itemType?.carrierName) {
-            setForm((prev) => ({ ...prev, simType: data.itemType!.carrierName! }));
-          }
+          // (a DEVICE's item type never sets the SIM type)
         }
       } else {
         setSimLookup(data);
@@ -169,9 +169,7 @@ export default function CourierRequestDetailPage() {
           if (data.normalized && data.normalized !== sn.trim()) {
             setForm((prev) => ({ ...prev, simSerial: data.normalized }));
           }
-          if (data.itemType?.carrierName) {
-            setForm((prev) => ({ ...prev, simType: data.itemType!.carrierName! }));
-          }
+          // SIM type is derived from this lookup for display (SimTypeField), never stored in the form.
         }
       }
     } catch {
@@ -296,7 +294,8 @@ export default function CourierRequestDetailPage() {
         simSerial: simSerials[0] || null,
         deviceSerials,
         simSerials,
-        simType: currentForm.simType,
+        // Restated for the backend to verify against inventory; undefined when unknown.
+        simType: deriveSimTypes([{ value: currentForm.simSerial ?? "", lookup: simLookup }]).primary ?? undefined,
         customerNotes: currentForm.customerNotes,
         responseReasonCode: currentForm.responseReasonCode,
         version: currentForm.version,
@@ -715,20 +714,12 @@ export default function CourierRequestDetailPage() {
                   ))}
                 </div>
 
-                {/* SIM Type — auto from lookup, still editable */}
-                <div>
-                  <label className="block text-xs text-[#6B7280] mb-1.5 font-medium">نوع الشريحة</label>
-                  <select
-                    value={currentForm.simType || ""}
-                    onChange={(e) => handleChange("simType", e.target.value)}
-                    className="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm text-[#2D3135] outline-none focus:border-[#18B2B0]"
-                  >
-                    <option value="">اختر النوع</option>
-                    {lookups?.simTypes.map((s) => (
-                      <option key={s.id} value={s.name}>{s.name}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* SIM Type — READ-ONLY, derived from the SIM's inventory item type (serial lookup) */}
+                <SimTypeField
+                  rows={[{ value: currentForm.simSerial ?? "", lookup: simLookup }]}
+                  labelClassName="block text-xs text-[#6B7280] mb-1.5 font-medium"
+                  boxClassName="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm text-[#2D3135]"
+                />
 
                 {/* Technician — READ-ONLY from serial custody; warn if assignment differs */}
                 <div>

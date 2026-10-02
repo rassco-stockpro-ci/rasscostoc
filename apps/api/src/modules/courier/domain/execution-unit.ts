@@ -5,6 +5,11 @@
  * at most one SIM, an optional TID. The unit is the Device<->SIM pairing; it
  * is persisted in courier_execution_units inside the close transaction.
  *
+ * The SIM type of a unit is NOT a free input: it is the carrier of the SIM's
+ * inventory item type (item_types), resolved by the custody guard. A client may
+ * restate it (units[].simType, legacy simType); a restatement that disagrees with
+ * the inventory is refused (SIM_TYPE_MISMATCH).
+ *
  * Domain decisions (product owner, 2026-10-02):
  *   - a device without a SIM is allowed only when declared (simWaived);
  *   - a SIM without a device is not allowed;
@@ -27,6 +32,8 @@ export interface CloseUnitSpec {
   simSerial: string | null;
   simWaived: boolean;
   tid: string | null;
+  /** The SIM type the client claims for this unit (never trusted, only compared). */
+  simType?: string | null;
 }
 
 export interface CloseUnitsPlan {
@@ -38,7 +45,8 @@ export interface CloseUnitsPlan {
 export interface ResolvedCloseUnit {
   unitNo: number;
   device: { itemId: string; serialNumber: string };
-  sim: { itemId: string; serialNumber: string } | null;
+  /** carrierName: the SIM's type from inventory (STC / Mobily / Zain / Lebara), null when its item type names none. */
+  sim: { itemId: string; serialNumber: string; carrierName: string | null } | null;
   simWaived: boolean;
   tid: string | null;
 }
@@ -53,6 +61,7 @@ export type CloseUnitErrorCode =
   | "UNIT_ROLE_MISMATCH"
   | "UNIT_LIMIT_EXCEEDED"
   | "UNIT_INVALID_PAYLOAD"
+  | "SIM_TYPE_MISMATCH"
   | "PAIRING_REQUIRED";
 
 export class CloseUnitError extends AppError {
@@ -129,6 +138,57 @@ export function assertResolvedUnits(units: ResolvedCloseUnit[]): void {
         throw new CloseUnitError("UNIT_DUPLICATE_SIM", `الشريحة ${u.sim.serialNumber} مكررة في الإغلاق.`, u.unitNo);
       }
       seen.set(u.sim.itemId, "sim");
+    }
+  }
+}
+
+/** Comparison form of a SIM type / carrier name. */
+export function normalizeCarrier(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+/** The SIM type the execution row (sn / sim_serial / sim_type) records: unit 1's SIM, from inventory. */
+export function primarySimType(units: ResolvedCloseUnit[]): string | null {
+  return units[0]?.sim?.carrierName ?? null;
+}
+
+/**
+ * A client may restate SIM types; inventory is the source of truth.
+ *   - per unit (units[].simType): must equal that unit's SIM type; a type claimed
+ *     for a unit with no SIM is refused;
+ *   - scalar (legacy simType): must equal the type of at least one SIM of the close.
+ * A claim that cannot be checked because the inventory names no carrier for the
+ * SIM is ignored — it is never stored (SIM_TYPE_UNAVAILABLE stays visible in the
+ * read model as simType: null).
+ */
+export function assertSimTypes(
+  units: ResolvedCloseUnit[],
+  claims: { perUnit: Array<string | null | undefined>; scalar?: string | null }
+): void {
+  units.forEach((unit, i) => {
+    const claimed = claims.perUnit[i]?.trim();
+    if (!claimed) return;
+    if (!unit.sim) {
+      throw new CloseUnitError("SIM_TYPE_MISMATCH", `الوحدة ${unit.unitNo}: لا توجد شريحة لتحديد نوعها (${claimed}).`, unit.unitNo);
+    }
+    const actual = unit.sim.carrierName;
+    if (actual && normalizeCarrier(actual) !== normalizeCarrier(claimed)) {
+      throw new CloseUnitError(
+        "SIM_TYPE_MISMATCH",
+        `الوحدة ${unit.unitNo}: نوع الشريحة المرسل (${claimed}) لا يطابق نوعها في المخزون (${actual}).`,
+        unit.unitNo
+      );
+    }
+  });
+
+  const scalar = claims.scalar?.trim();
+  if (scalar) {
+    const known = units.flatMap((u) => (u.sim?.carrierName ? [normalizeCarrier(u.sim.carrierName)] : []));
+    if (known.length > 0 && !known.includes(normalizeCarrier(scalar))) {
+      throw new CloseUnitError(
+        "SIM_TYPE_MISMATCH",
+        `نوع الشريحة المرسل (${scalar}) لا يطابق نوع أي شريحة في الإغلاق (${[...new Set(known)].join("، ")}).`
+      );
     }
   }
 }

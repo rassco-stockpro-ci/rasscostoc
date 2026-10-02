@@ -165,6 +165,8 @@ export interface CourierExecutionUnit {
   simWaived: boolean;
   tid: string | null;
   pairingSource: "EXPLICIT" | "LEGACY_INFERRED" | "LEGACY_BACKFILL";
+  /** Derived, not stored: the carrier of the SIM's inventory item type (null: no SIM or no carrier named). */
+  simType: string | null;
   createdAt: Date | null;
 }
 

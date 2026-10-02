@@ -37,6 +37,7 @@ export function unitsFromPayload(raw: unknown): CloseUnitsPlan {
       simSerial: text(u.simSerial) || null,
       simWaived: u.simWaived === true,
       tid: text(u.tid) || null,
+      simType: text(u.simType) || null,
     };
   });
   assertUnitStructure(units);

@@ -21,6 +21,6 @@ export interface ICourierExecutionsRepository {
     tx?: any
   ): Promise<CourierExecution | null>;
   /** Installation units of a close; written only inside the close transaction. */
-  insertExecutionUnits(units: Omit<CourierExecutionUnit, "id" | "createdAt">[], tx?: any): Promise<CourierExecutionUnit[]>;
+  insertExecutionUnits(units: Omit<CourierExecutionUnit, "id" | "createdAt" | "simType">[], tx?: any): Promise<CourierExecutionUnit[]>;
   findExecutionUnitsByRequestId(requestId: number, tx?: any): Promise<CourierExecutionUnit[]>;
 }

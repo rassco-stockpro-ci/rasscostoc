@@ -60,7 +60,7 @@ import { metrics } from "@core/telemetry/metrics";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
 import { ValidationError, ConflictError, PdfReportAlreadyProcessedError, DuplicateRequestApprovalError } from "@core/errors/AppError";
 
-function toExecutionUnit(row: any): CourierExecutionUnit {
+function toExecutionUnit(row: any, simType: string | null = null): CourierExecutionUnit {
   return {
     id: row.id,
     requestId: row.requestId,
@@ -73,6 +73,7 @@ function toExecutionUnit(row: any): CourierExecutionUnit {
     simWaived: row.simWaived,
     tid: row.tid ?? null,
     pairingSource: row.pairingSource,
+    simType,
     createdAt: row.createdAt ? new Date(row.createdAt) : null,
   };
 }
@@ -135,7 +136,7 @@ export class DrizzleCourierRepository implements
     };
   }
 
-  async insertExecutionUnits(units: Omit<CourierExecutionUnit, "id" | "createdAt">[], tx?: any): Promise<CourierExecutionUnit[]> {
+  async insertExecutionUnits(units: Omit<CourierExecutionUnit, "id" | "createdAt" | "simType">[], tx?: any): Promise<CourierExecutionUnit[]> {
     if (units.length === 0) return [];
     const client = this.getClient(tx);
     const rows = await client.insert(courierExecutionUnits).values(units).returning();
@@ -149,7 +150,21 @@ export class DrizzleCourierRepository implements
       .from(courierExecutionUnits)
       .where(eq(courierExecutionUnits.requestId, requestId))
       .orderBy(courierExecutionUnits.unitNo);
-    return rows.map(toExecutionUnit);
+
+    // SIM type is not stored on the unit: it is the carrier of the SIM item's type (inventory is the source of truth).
+    const simItemIds = rows.map((r: any) => r.simItemId).filter((id: string | null): id is string => !!id);
+    const carrierByItem = new Map<string, string | null>();
+    if (simItemIds.length > 0) {
+      const typeRows = await client
+        .select({ itemId: items.id, typeId: itemTypes.id, nameEn: itemTypes.nameEn, nameAr: itemTypes.nameAr })
+        .from(items)
+        .innerJoin(itemTypes, eq(itemTypes.id, items.itemTypeId))
+        .where(inArray(items.id, simItemIds));
+      for (const t of typeRows) {
+        carrierByItem.set(t.itemId, SerialRecognitionService.resolveCarrierName(t.typeId, t.nameEn ?? "", t.nameAr ?? ""));
+      }
+    }
+    return rows.map((r: any) => toExecutionUnit(r, r.simItemId ? carrierByItem.get(r.simItemId) ?? null : null));
   }
 
   async findRequestByTid(tid: string, tx?: any): Promise<CourierRequest | null> {
