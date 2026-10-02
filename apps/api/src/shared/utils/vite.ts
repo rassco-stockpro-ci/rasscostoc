@@ -15,6 +15,6 @@ export async function setupVite(app: Express, server: Server): Promise<void> {
 
 export async function serveStatic(app: Express): Promise<void> {
   // Import existing static serving temporarily  
-  const { serveStatic: legacyServeStatic } = await import("@core/utils/vite");
+  const { serveStatic: legacyServeStatic } = await import("@core/utils/static");
   return legacyServeStatic(app);
 }

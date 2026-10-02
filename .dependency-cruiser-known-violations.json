@@ -212,7 +212,6 @@
       "name": "controller-should-not-depend-on-repository-or-drizzle"
     }
   },
-
   {
     "type": "dependency",
     "from": "apps/api/src/modules/inventory/domain/custody-engine.ts",

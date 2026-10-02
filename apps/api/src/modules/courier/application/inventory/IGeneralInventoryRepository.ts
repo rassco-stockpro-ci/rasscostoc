@@ -19,6 +19,14 @@ export interface DeductInventoryCommand {
   };
 }
 
+export interface DeductConsumablesCommand {
+  technicianId: string;
+  /** One entry per item type, quantity in units (> 0). */
+  items: { itemTypeId: string; quantity: number }[];
+  actorId: string;
+  notes: string;
+}
+
 export interface IGeneralInventoryRepository {
   /**
    * OPS-REMED-E3: optional transaction context so this batch join an existing
@@ -28,6 +36,16 @@ export interface IGeneralInventoryRepository {
    */
   deductTechnicianInventory(
     command: DeductInventoryCommand,
+    ctx?: InventoryTransactionContext
+  ): Promise<void>;
+
+  /**
+   * Deducts consumables from the technician's moving inventory first, then
+   * fixed, opening sealed boxes as needed. Throws with
+   * code DEDUCT_INSUFFICIENT_STOCK when the total cannot cover a quantity.
+   */
+  deductTechnicianConsumables(
+    command: DeductConsumablesCommand,
     ctx?: InventoryTransactionContext
   ): Promise<void>;
 }

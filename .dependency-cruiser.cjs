@@ -59,6 +59,20 @@ module.exports = {
       }
     },
     {
+      name: 'no-production-import-of-integration-tests',
+      comment: 'modules/<m>/__integration__/ holds cross-layer integration tests only; no other code may import from it.',
+      severity: 'error',
+      from: { path: '^apps/api/src/', pathNot: '/__integration__/' },
+      to: { path: '/__integration__/' }
+    },
+    {
+      name: 'integration-dir-holds-tests-only',
+      comment: 'Only *.test.ts files may live in __integration__/ (exempt from the layer rules because it is test-only).',
+      severity: 'error',
+      from: { path: '/__integration__/', pathNot: '[.]test[.]ts$' },
+      to: {}
+    },
+    {
       name: 'core-should-not-depend-on-business-modules',
       comment: 'Core layer must remain independent of specific business modules.',
       severity: 'error',

@@ -99,7 +99,6 @@ export function registerCourierRoutes(app: Express): void {
 
   // Executions (Courier execution forms)
   app.post("/api/courier/executions/:requestId", requireAuth, controller.saveExecution);
-  app.post("/api/courier/serial-lookup", requireAuth, controller.serialLookup);
 
   // Lookups
   app.get("/api/courier/lookups", requireAuth, controller.getLookups);

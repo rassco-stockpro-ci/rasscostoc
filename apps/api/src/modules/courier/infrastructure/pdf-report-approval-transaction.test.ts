@@ -27,7 +27,9 @@ import {
   courierExecutions,
   courierAuditLogs,
   outboxEvents,
+  inventoryDeductionCompletions,
 } from "@shared/schema";
+import { createInventoryEngine } from "../composition/courier.container";
 import { CourierService } from "../application/courier.service";
 import { DrizzleCourierRepository } from "./repositories/drizzle-courier.repository";
 import { DrizzleCourierUnitOfWork } from "./repositories/DrizzleCourierUnitOfWork";
@@ -64,6 +66,9 @@ describe("OPS-REMED-E12 — atomic PDF-report approval/rejection transaction", (
       // this test's own requestId instead (see test #1, #7-10, #21-23,
       // #24) — accumulated rows from other tests are harmless noise.
       await db.delete(courierAuditLogs).where(and(eq(courierAuditLogs.tableName, "executions"), eq(courierAuditLogs.recordId, requestId))).catch(() => {});
+      // Approvals now deduct in their own transaction; drop the completion
+      // rows so CourierProjectionWorker's tests never claim them.
+      await db.delete(inventoryDeductionCompletions).where(eq(inventoryDeductionCompletions.requestId, requestId)).catch(() => {});
       await db.delete(courierExecutions).where(eq(courierExecutions.requestId, requestId)).catch(() => {});
       await db.delete(courierRequests).where(eq(courierRequests.id, requestId)).catch(() => {});
     }
@@ -84,7 +89,7 @@ describe("OPS-REMED-E12 — atomic PDF-report approval/rejection transaction", (
 
   function makeService(): CourierService {
     const repo = new DrizzleCourierRepository();
-    return new CourierService(new DrizzleCourierUnitOfWork(), repo, repo, repo, repo, repo);
+    return new CourierService(new DrizzleCourierUnitOfWork(), repo, repo, repo, repo, repo, createInventoryEngine());
   }
 
   async function seedTechnician(label: string) {
@@ -121,7 +126,24 @@ describe("OPS-REMED-E12 — atomic PDF-report approval/rejection transaction", (
       currentOwnerId: ownerId,
     });
     createdItemIds.push(itemId);
+
+    // Its SIM, in the same custody: completeBody() sends a complete
+    // device/SIM pair, which the close's in-transaction deduction requires.
+    const simItemId = randomUUID();
+    await db.insert(items).values({
+      id: simItemId,
+      itemTypeId,
+      serialNumber: simSerialFor(serialNumber),
+      barcode: `${simSerialFor(serialNumber)}-BAR`,
+      status: "RECEIVED_BY_TECHNICIAN",
+      currentOwnerId: ownerId,
+    });
+    createdItemIds.push(simItemId);
     return itemId;
+  }
+
+  function simSerialFor(deviceSerial: string): string {
+    return `${deviceSerial}S`;
   }
 
   async function seedRequest(label: string) {
@@ -153,7 +175,7 @@ describe("OPS-REMED-E12 — atomic PDF-report approval/rejection transaction", (
 
   function completeBody(serial: string, technicianUsername: string) {
     return {
-      devices: [{ sn: serial, technician_code: technicianUsername }],
+      devices: [{ sn: serial, sim_serial: simSerialFor(serial), technician_code: technicianUsername }],
       deliveryDate: "2026-07-12",
       time: "17:53",
       paperRoll: "Yes",
@@ -503,13 +525,14 @@ describe("OPS-REMED-E12 — atomic PDF-report approval/rejection transaction", (
       const service = makeService();
       await service.completePdfReport(pdfId, requestId, completeBody(serial, tech), tech);
 
-      // If a local subscriber (InventorySubscriber) had run before/instead
-      // of a durable outbox enqueue, the item would already be DELIVERED
-      // here. It must still be in active custody — deduction is the
-      // OutboxWorker/subscriber's job, strictly after this transaction
-      // commits and enqueues the event, never synchronously inside it.
+      // PRE-MULTI-DEVICE HARDENING (intentional change): the deduction now
+      // commits inside the approval transaction itself, so the item is
+      // DELIVERED the moment the approval returns. The enqueued event is
+      // still only a durable PENDING outbox row — no local subscriber ran
+      // while the transaction was open (asserted below).
       const [item] = await db.select().from(items).where(eq(items.id, itemId));
-      expect(item!.status).toBe("RECEIVED_BY_TECHNICIAN");
+      expect(item!.status).toBe("DELIVERED");
+      expect(item!.currentOwnerId).toBeNull();
 
       const outboxRows = await db.select().from(outboxEvents);
       const completedRows = outboxRows.filter(

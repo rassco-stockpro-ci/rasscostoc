@@ -8,12 +8,7 @@
 
 import { GuardValidationError, isCompletedStatus, type GuardContext, type TechUser } from "./guard.types";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
-
-const ACTIVE_CUSTODY_STATUSES = [
-  "IN_TRANSIT_CUSTODY",
-  "RECEIVED_BY_TECHNICIAN",
-  "IN_TRANSIT",
-] as const;
+import { isActiveCustodyStatus } from "../../../inventory/contracts/custody-policy";
 
 export class TechnicianGuard {
   static async resolve(ctx: GuardContext): Promise<TechUser | null> {
@@ -44,7 +39,7 @@ export class TechnicianGuard {
           const techUser = await ctx.inventoryPort.findUserById(item.currentOwnerId);
 
           if (techUser) {
-            if (!(ACTIVE_CUSTODY_STATUSES as readonly string[]).includes(item.status)) {
+            if (!isActiveCustodyStatus(item.status)) {
               throw new GuardValidationError(
                 `الجهاز (${rawSn}) ليس في حالة عهدة نشطة. الحالة الحالية: ${item.status}`,
                 "sn"

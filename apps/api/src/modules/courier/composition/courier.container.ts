@@ -102,7 +102,8 @@ export function bootstrapCourierModule(): CourierController {
     repository,
     repository,
     repository,
-    repository
+    repository,
+    createInventoryEngine()
   );
 
   registerCourierJobHandlers(repository);
@@ -146,4 +147,14 @@ export async function updateCustodyClosureStatus(
   const repository = new DrizzleCourierRepository();
   const row = await repository.updateCustodyClosureStatus(requestId, fromStates, toState);
   return row !== null;
+}
+
+/**
+ * Whether this request's inventory deduction has committed (its
+ * inventory_deduction_completions row exists). Closes deduct inside their
+ * own transaction, so InventorySubscriber uses this to skip the
+ * ExecutionCompletedEvent those closes enqueue.
+ */
+export async function hasInventoryDeductionCompletion(requestId: number): Promise<boolean> {
+  return new DrizzleCourierRepository().hasInventoryDeductionCompletion(requestId);
 }

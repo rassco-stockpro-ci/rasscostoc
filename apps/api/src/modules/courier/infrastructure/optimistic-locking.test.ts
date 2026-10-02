@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { db } from "../../../core/config/db";
 import { courierRequests, courierExecutions, users } from "@shared/schema";
+import { createInventoryEngine } from "../composition/courier.container";
 import { CourierService } from "../application/courier.service";
 import { DrizzleCourierRepository } from "./repositories/drizzle-courier.repository";
 import { DrizzleCourierUnitOfWork } from "./repositories/DrizzleCourierUnitOfWork";
@@ -11,7 +12,7 @@ describe("Courier Optimistic Locking Integration Tests", () => {
   const repo = new DrizzleCourierRepository();
   const service = new CourierService(
     new DrizzleCourierUnitOfWork(),
-    repo, repo, repo, repo, repo
+    repo, repo, repo, repo, repo, createInventoryEngine()
   );
   let userId: string;
 

@@ -61,18 +61,17 @@ export interface DeductionResult {
 }
 
 /**
- * OPS-REMED-E3 — opaque transaction-context marker.
+ * OPS-REMED-E3 — opaque transaction-context marker, now defined once in the
+ * courier domain transaction contract (domain/transaction.ts) so the close
+ * unit of work hands InventoryEngine the very same handle type.
  *
  * The application layer never sees the concrete Drizzle transaction shape.
- * Only infrastructure-layer adapters (SerializedItemsAdapter,
- * DevicesServiceAdapter, DrizzleInventoryTransactionRunner) are permitted to
- * cast to/from the real transaction object. This satisfies the
- * architecture-lint rule "application-should-not-depend-on-presentation-
- * infrastructure-or-drizzle" (.dependency-cruiser.cjs) without using `any`.
+ * Only infrastructure (SerializedItemsAdapter, DevicesServiceAdapter,
+ * DrizzleInventoryTransactionRunner, DrizzleCourierUnitOfWork) casts to/from
+ * the real transaction object.
  */
-export interface InventoryTransactionContext {
-  readonly __brand: unique symbol;
-}
+import type { InventoryTransactionContext } from "../../domain/transaction";
+export type { InventoryTransactionContext } from "../../domain/transaction";
 
 export interface IInventoryTransactionRunner {
   run<T>(work: (ctx: InventoryTransactionContext) => Promise<T>): Promise<T>;

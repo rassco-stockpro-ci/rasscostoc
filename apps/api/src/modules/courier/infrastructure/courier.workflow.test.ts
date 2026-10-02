@@ -21,6 +21,11 @@ const { mockSelect, mockInsert, mockUpdate, mockDelete } = vi.hoisted(() => {
         if (tableName === "idempotency_records") {
           return [];
         }
+        // No completion row: these events model a legacy close whose
+        // deduction has not run, which InventorySubscriber still performs.
+        if (queriedTable?.[Symbol.for("drizzle:Name")] === "inventory_deduction_completions") {
+          return [];
+        }
         if (tableName === "courier_request_items") {
           return [
             {

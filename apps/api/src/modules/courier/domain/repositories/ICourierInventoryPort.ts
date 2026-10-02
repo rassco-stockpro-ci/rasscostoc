@@ -52,6 +52,19 @@ export interface ICourierInventoryPort {
     technicianCode: string | null;
   } | null>;
 
+  /**
+   * Consumable balances per itemTypeId: every moving and fixed inventory row of
+   * the technician for that item type, plus the item type's unitsPerBox.
+   */
+  getTechnicianConsumableBalances(
+    technicianId: string,
+    itemTypeIds: string[],
+    tx?: any
+  ): Promise<Record<string, { unitsPerBox: number; buckets: { boxes: number; units: number }[] }>>;
+
+  /** True once InventoryEngine has durably completed the deduction for this request. */
+  hasInventoryDeductionCompletion(requestId: number, tx?: any): Promise<boolean>;
+
   linkSimToTechnician(data: {
     simSerial: string;
     simType?: string;

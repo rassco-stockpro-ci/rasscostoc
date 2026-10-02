@@ -21,6 +21,9 @@
 #   1  - RELEASE_SHA missing
 #   2  - RELEASE_SHA present but not a well-formed 40-char hex SHA
 #   3  - RELEASE_SHA present, well-formed, but does not match expected_sha
+#   4  - RELEASE_SHA is "<sha>-dirty": the artifact was built from
+#        uncommitted changes (scripts/write-release-sha.cjs) and is not a
+#        release of any commit
 check_release_sha() {
   local dist_dir="$1"
   local expected_sha="$2"
@@ -33,6 +36,11 @@ check_release_sha() {
   fi
 
   build_sha="$(tr -d '[:space:]' < "$release_sha_file")"
+
+  if [[ "$build_sha" =~ ^[0-9a-f]{40}-dirty$ ]]; then
+    echo "dirty: $release_sha_file is '$build_sha' -- built from uncommitted changes, not a release of any commit"
+    return 4
+  fi
 
   if ! [[ "$build_sha" =~ ^[0-9a-f]{40}$ ]]; then
     echo "invalid: $release_sha_file contains '$build_sha', not a well-formed 40-char lowercase hex SHA"

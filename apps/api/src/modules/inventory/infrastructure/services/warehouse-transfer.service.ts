@@ -3,6 +3,7 @@ import { items, itemTypes, inventoryTransactions, itemHistoryLogs, warehouseTran
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { CustodyEngine } from "./custody-engine";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
+import { ACTIVE_CUSTODY_STATUSES } from "../../domain/active-custody.policy";
 
 export class WarehouseTransferService {
   async getWarehouseTransferById(id: string) {
@@ -193,7 +194,7 @@ export class WarehouseTransferService {
       .where(
         and(
           eq(items.currentOwnerId, technicianId),
-          inArray(items.status, ["RECEIVED_BY_TECHNICIAN", "IN_TRANSIT_CUSTODY"])
+          inArray(items.status, [...ACTIVE_CUSTODY_STATUSES])
         )
       )
       .orderBy(items.createdAt);

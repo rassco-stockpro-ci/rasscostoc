@@ -3,6 +3,31 @@
  * Shared types and errors for the Guard Validation Layer.
  */
 
+import { AppError } from "@core/errors/AppError";
+import type { ICourierRequestsRepository } from "../../domain/repositories/ICourierRequestsRepository";
+import type { ICourierInventoryPort } from "../../domain/repositories/ICourierInventoryPort";
+import type { ICourierDashboardReadRepository } from "../../domain/repositories/ICourierDashboardReadRepository";
+
+/**
+ * What a guard may do with the database: read, plus append the audit row of
+ * a rejected validation. Nothing else is reachable through these types, so a
+ * guard cannot gain a business-state write by accident (every state change of
+ * a close is returned in the decision and applied inside the close
+ * transaction).
+ */
+export type GuardRequestsReader = Pick<ICourierRequestsRepository, "findRequestItems">;
+export type GuardInventoryReader = Pick<
+  ICourierInventoryPort,
+  | "findItemBySerial"
+  | "findUserById"
+  | "findUserByCodeOrUsername"
+  | "findUserByFuzzyName"
+  | "hasInventoryDeductionCompletion"
+  | "getTechnicianConsumableBalances"
+>;
+/** The only write a guard performs: the append-only audit row of a rejection. */
+export type GuardRejectionAudit = Pick<ICourierDashboardReadRepository, "insertAuditLog">;
+
 /**
  * Context passed to all guards during execution validation.
  */
@@ -15,9 +40,9 @@ export interface GuardContext {
   request: RequestRecord;
   /** The existing execution record if any (for update path) */
   existingExecution?: ExistingExecution | null;
-  requestsRepo: any;
-  dashboardRepo: any;
-  inventoryPort: any;
+  requestsRepo: GuardRequestsReader;
+  dashboardRepo: GuardRejectionAudit;
+  inventoryPort: GuardInventoryReader;
 }
 
 export interface ExecutionInput {
@@ -82,13 +107,15 @@ export interface TechUser {
 /**
  * Thrown when a guard rejects the request.
  * No data should be written to DB after this error is thrown.
+ * An AppError (422) so the rejection reason reaches the client; a plain Error
+ * is masked as "Internal server error" by the production error handler.
  */
-export class GuardValidationError extends Error {
+export class GuardValidationError extends AppError {
   public readonly field?: string;
   public readonly auditAction: string = "verification_failed";
 
   constructor(message: string, field?: string) {
-    super(message);
+    super(message, 422, true, "GUARD_VALIDATION_FAILED");
     this.name = "GuardValidationError";
     this.field = field;
   }

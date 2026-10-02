@@ -18,6 +18,9 @@ import {
   itemHistoryLogs,
   regions,
   supervisorTechnicians,
+  technicianMovingInventoryEntries,
+  technicianFixedInventoryEntries,
+  inventoryDeductionCompletions,
 } from "@shared/schema";
 import { eq, and, or, sql, desc, count, inArray, ilike } from "drizzle-orm";
 import type { ICourierRepository } from "../../domain/repositories/courier.repository.interface";
@@ -1412,6 +1415,41 @@ export class DrizzleCourierRepository implements
   async findItemBySerial(serial: string, tx?: any): Promise<any | null> {
     const client = tx || this.tx || db;
     return SerialRecognitionService.findItemBySerial(serial, client);
+  }
+
+  async getTechnicianConsumableBalances(
+    technicianId: string,
+    itemTypeIds: string[],
+    tx?: any
+  ): Promise<Record<string, { unitsPerBox: number; buckets: { boxes: number; units: number }[] }>> {
+    const client = tx || this.tx || db;
+    const result: Record<string, { unitsPerBox: number; buckets: { boxes: number; units: number }[] }> = {};
+    if (itemTypeIds.length === 0) return result;
+
+    const types = await client
+      .select({ id: itemTypes.id, unitsPerBox: itemTypes.unitsPerBox })
+      .from(itemTypes)
+      .where(inArray(itemTypes.id, itemTypeIds));
+    for (const t of types) result[t.id] = { unitsPerBox: t.unitsPerBox, buckets: [] };
+
+    for (const table of [technicianMovingInventoryEntries, technicianFixedInventoryEntries]) {
+      const rows = await client
+        .select({ itemTypeId: table.itemTypeId, boxes: table.boxes, units: table.units })
+        .from(table)
+        .where(and(eq(table.technicianId, technicianId), inArray(table.itemTypeId, itemTypeIds)));
+      for (const r of rows) result[r.itemTypeId]?.buckets.push({ boxes: r.boxes, units: r.units });
+    }
+    return result;
+  }
+
+  async hasInventoryDeductionCompletion(requestId: number, tx?: any): Promise<boolean> {
+    const client = tx || this.tx || db;
+    const [row] = await client
+      .select({ id: inventoryDeductionCompletions.id })
+      .from(inventoryDeductionCompletions)
+      .where(eq(inventoryDeductionCompletions.requestId, requestId))
+      .limit(1);
+    return !!row;
   }
 
   async normalizeSerial(serial: string, hintItemTypeId: string, tx?: any): Promise<{

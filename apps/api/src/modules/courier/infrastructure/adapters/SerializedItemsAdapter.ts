@@ -17,6 +17,7 @@ import type { ISerializedInventoryRepository } from "../../application/inventory
 import type { InventoryTransactionContext } from "../../application/inventory/inventory.engine.types";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
 import { unwrapInventoryTransactionContext } from "../database/DrizzleInventoryTransactionRunner";
+import { ACTIVE_CUSTODY_STATUSES } from "../../../inventory/contracts/custody-policy";
 
 export class SerializedItemsAdapter implements ISerializedInventoryRepository {
   /**
@@ -77,7 +78,7 @@ export class SerializedItemsAdapter implements ISerializedInventoryRepository {
         and(
           inArray(items.serialNumber, candidates),
           eq(items.currentOwnerId, technicianId),
-          inArray(items.status, ["IN_TRANSIT_CUSTODY", "RECEIVED_BY_TECHNICIAN"])
+          inArray(items.status, [...ACTIVE_CUSTODY_STATUSES])
         )
       )
       .limit(1);

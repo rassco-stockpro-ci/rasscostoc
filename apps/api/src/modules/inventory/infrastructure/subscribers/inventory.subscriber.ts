@@ -1,18 +1,38 @@
 /**
  * InventorySubscriber
  *
- * Listens to ExecutionCompletedEvent to perform physical inventory deductions.
+ * Listens to ExecutionCompletedEvent.
+ *
+ * COMPATIBILITY PATH ONLY. Every close commits its own deduction inside the
+ * close transaction (CloseRequestUseCase.commit), which also writes the
+ * inventory_deduction_completions row and enqueues this event; for those the
+ * subscriber only acknowledges the event. It deducts only for an event that
+ * has no completion row, i.e. one enqueued before that change. Proven
+ * producers (2026-10-02): CloseRequestUseCase.commit only (CourierWorkflow's
+ * publisher has no production caller); production outbox held 0 pending or
+ * failed ExecutionCompletedEvent rows.
+ *
+ * Even on that path it deducts exactly the serials carried in the event's own
+ * execution snapshot — never a set rebuilt from courier_request_items, which
+ * could include an earlier RECEIVED device this close did not install.
+ *
+ * Retirement: once a release has run with zero events reaching the deduction
+ * branch (log line "LEGACY deduction"), remove that branch and keep this
+ * subscriber acknowledge-only; then drop the subscription.
+ *
  * If the deduction fails, publishes an InventoryDeductionFailedEvent.
  */
 
 import { EventBus } from "@core/events/event-bus";
 import { ExecutionCompletedEvent, InventoryDeductionFailedEvent } from "@core/events/events";
-import { createInventoryEngine, updateCustodyClosureStatus } from "../../../courier/contracts";
+import {
+  createInventoryEngine,
+  hasInventoryDeductionCompletion,
+  resolveConsumableQuantities,
+  updateCustodyClosureStatus,
+} from "../../../courier/contracts";
 import { idempotencyService } from "@core/idempotency/idempotency.service";
 import { tracer } from "@core/telemetry/tracer";
-import { db } from "@core/config/db";
-import { courierRequestItems } from "@shared/schema";
-import { eq } from "drizzle-orm";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
 
 export class InventorySubscriber {
@@ -44,23 +64,49 @@ export class InventorySubscriber {
           `[InventorySubscriber] Received ExecutionCompletedEvent for request ID: ${requestId}`
         );
 
+        // Closes deduct inside their own transaction, which also enqueues
+        // this event; the deduction is already committed, so there is
+        // nothing left to do. Only events enqueued before that change (or
+        // by any other writer) reach the deduction below.
+        if (await hasInventoryDeductionCompletion(requestId)) {
+          console.log(
+            `[InventorySubscriber] Request ${requestId} already deducted — event ${event.id} acknowledged without deducting.`
+          );
+          return;
+        }
+
         // Build serial list first so deduction can resolve technician from custody owner
         const devices: { serialNumber: string; model?: string }[] = [];
         const serialsForCustody: string[] = [];
 
         const addSerial = async (sn?: string | null) => {
           if (!sn?.trim()) return;
-          const candidates = await SerialRecognitionService.buildStoredSerialCandidates(sn);
-          const serial =
-            [...candidates].sort((a, b) => a.length - b.length)[0] || sn.trim();
+          // FIX (2026-09-24): this used to pick the SHORTEST candidate string
+          // (e.g. stripping an alphabetic prefix like NCD/NCC/SAS/SAW) and then
+          // push EVERY candidate form into serialsForCustody as a "safety net".
+          // For items actually stored WITH their prefix intact (confirmed live:
+          // item NCD700022155 is stored as "NCD700022155", not "700022155"),
+          // this put a phantom, non-existent serial ("700022155") into the
+          // deduction list alongside the real one. deductSerializedCustody()
+          // processes every entry in one transaction and throws on the first
+          // one that doesn't resolve to an item in active custody -- so the
+          // phantom entry aborted the WHOLE deduction, rolling back the
+          // already-correct scan-out too (observed: "ScanOut skipped for
+          // \"700022155\" — not found in technician active custody", ROOT
+          // CAUSE of a real production custody-deduction failure for this
+          // item). Fixed by resolving against the actual stored item (trying
+          // every candidate form, same as scanOut itself will) and using ITS
+          // real serialNumber -- never a derived/guessed variant. Falls back
+          // to the raw input only when no stored item matches under any
+          // candidate, preserving the existing "let scanOut report a clean
+          // not-found" behavior for genuinely missing items.
+          const existingItem = await SerialRecognitionService.findItemBySerial(sn);
+          const serial = existingItem?.serialNumber || sn.trim();
           if (!devices.some((d) => d.serialNumber === serial)) {
             devices.push({ serialNumber: serial, model: request.vendorType ?? undefined });
           }
           if (!serialsForCustody.includes(serial)) {
             serialsForCustody.push(serial);
-          }
-          for (const c of candidates) {
-            if (!serialsForCustody.includes(c)) serialsForCustody.push(c);
           }
         };
 
@@ -75,20 +121,10 @@ export class InventorySubscriber {
         if (looksLikeSerial(execution.extraField2)) await addSerial(execution.extraField2);
         if (looksLikeSerial(execution.simSerial)) await addSerial(execution.simSerial);
 
-        const requestItemsList = await db
-          .select()
-          .from(courierRequestItems)
-          .where(eq(courierRequestItems.requestId, requestId));
-
-        for (const item of requestItemsList) {
-          if (item.status === "RECEIVED" || item.status === "DELIVERED" || item.status === "INSTALLED") {
-            if (item.itemType === "POS" && item.serialNumber) {
-              await addSerial(item.serialNumber);
-            } else if (item.itemType === "SIM" && item.simSerial) {
-              await addSerial(item.simSerial);
-            }
-          }
-        }
+        // Deliberately NOT rebuilt from courier_request_items (see header).
+        console.warn(
+          `[InventorySubscriber] LEGACY deduction for request ${requestId} (event ${event.id}): no completion row; deducting the event's own serials only.`
+        );
 
         // Prefer username stamped from custody owner; fall back to assignment only if needed
         let technicianCode =
@@ -133,9 +169,8 @@ export class InventorySubscriber {
                 devices,
                 serialsForCustody,
                 pairs,
-                paperRollQty: execution.paperRollQty ?? (execution.paperRoll === "Yes" ? 1 : 0),
-                stickersQty: execution.stickersQty ?? 0,
-                nulipCardsQty: execution.nulipCardsQty ?? 0,
+                // The one consumables rule (same as the guard and the close).
+                ...resolveConsumableQuantities(execution, null),
                 customerName: request.customerName ?? "عميل غير معروف",
                 referenceNumber: request.incidentNumber ?? String(requestId),
                 vendorType: request.vendorType,

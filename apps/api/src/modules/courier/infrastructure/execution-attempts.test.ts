@@ -5,8 +5,10 @@ import { DrizzleCourierUnitOfWork } from "./repositories/DrizzleCourierUnitOfWor
 import { EventBus } from "@core/events/event-bus";
 import { ExecutionCompletedEvent } from "@core/events/events";
 
-const { mockRepoInstance } = vi.hoisted(() => {
+const { mockRepoInstance, mockOutbox } = vi.hoisted(() => {
   return {
+    // Transactional outbox port of the mocked unit of work (domain/transaction.ts)
+    mockOutbox: { enqueue: vi.fn() },
     mockRepoInstance: {
       findRequestById: vi.fn(),
       findExecutionByRequestId: vi.fn(),
@@ -23,9 +25,32 @@ const { mockRepoInstance } = vi.hoisted(() => {
       findUserByFuzzyName: vi.fn(),
       findLinkedRequestItemBySerial: vi.fn(),
       findItemTypeById: vi.fn(),
+      deleteRequestItems: vi.fn(),
+      hasInventoryDeductionCompletion: vi.fn().mockResolvedValue(false),
+      updateCustodyClosureStatus: vi.fn().mockResolvedValue({ id: 10 }),
     }
   };
 });
+
+// InventoryEngine stand-in: this file unit-tests the attempt lifecycle; the
+// real deduction runs in the DB-backed close-atomicity tests.
+const mockEngine = {
+  prepare: vi.fn(async (ctx: any) => ({ ctx, canonicalSerials: ctx.serialsForCustody })),
+  executePrepared: vi.fn(async (prepared: any) => ({
+    requestId: prepared.ctx.requestId,
+    generalInventoryDeducted: false,
+    custodyItemsDeducted: prepared.canonicalSerials,
+    errors: [],
+  })),
+};
+
+// Serial normalization reads item types from the DB; stored form == input here.
+vi.mock("@core/serial/serial-recognition.service", () => ({
+  SerialRecognitionService: {
+    findItemBySerial: vi.fn().mockResolvedValue(null),
+    buildStoredSerialCandidates: vi.fn(async (s: string) => [s]),
+  },
+}));
 
 // Mock the drizzleCourierRepository module
 vi.mock("./repositories/drizzle-courier.repository", () => {
@@ -47,6 +72,8 @@ vi.mock("./repositories/DrizzleCourierUnitOfWork", () => {
             pdfRepository: mockRepoInstance,
             dashboardRepository: mockRepoInstance,
             inventoryPort: mockRepoInstance,
+            outbox: mockOutbox,
+            inventoryTransaction: { handle: "tx" },
             tx: {},
           });
         }),
@@ -77,6 +104,7 @@ describe("Courier Execution Engine & Attempts Lifecycle", () => {
       mockRepoInstance as any,
       mockRepoInstance as any,
       mockRepoInstance as any,
+      mockEngine as any,
     );
     // Clear EventBus
     const eventBus = EventBus.getInstance();
@@ -155,8 +183,12 @@ describe("Courier Execution Engine & Attempts Lifecycle", () => {
 
   describe("Execution Attempt Submission", () => {
     it("should create a SUCCESS attempt, transition request, and publish completion event", async () => {
-      const eventBus = EventBus.getInstance();
-      const publishSpy = vi.spyOn(eventBus, "publish");
+      // PRE-MULTI-DEVICE HARDENING (intentional changes): the completion
+      // event is enqueued straight to the outbox on the attempt's
+      // transaction (no EventBus fallback), the deduction runs in that same
+      // transaction, and only the request items installed by THIS attempt
+      // become INSTALLED — an unrelated RECEIVED item is left alone.
+      mockOutbox.enqueue.mockResolvedValue(undefined);
 
       vi.mocked(drizzleCourierRepository.findRequestById).mockResolvedValue({ id: 1, customerName: "Test" } as any);
       vi.mocked(drizzleCourierRepository.findExecutionByRequestId).mockResolvedValue({
@@ -182,7 +214,9 @@ describe("Courier Execution Engine & Attempts Lifecycle", () => {
         simSerial: "NEW_SIM",
       } as any);
       vi.mocked(drizzleCourierRepository.findRequestItems).mockResolvedValue([
-        { id: 200, status: "RECEIVED" },
+        { id: 200, status: "RECEIVED", itemType: "POS", serialNumber: "NEW_SN" },
+        { id: 201, status: "RECEIVED", itemType: "SIM", simSerial: "NEW_SIM" },
+        { id: 202, status: "RECEIVED", itemType: "POS", serialNumber: "ORPHAN_SN" },
       ] as any);
 
       const attemptResult = await service.createExecutionAttempt(1, "actor-1", {
@@ -219,17 +253,36 @@ describe("Courier Execution Engine & Attempts Lifecycle", () => {
         1
       );
 
-      // Verify that request item status was updated to INSTALLED
+      // Verify that the items installed by this attempt became INSTALLED
       expect(drizzleCourierRepository.updateRequestItem).toHaveBeenCalledWith(
         200,
         expect.objectContaining({ status: "INSTALLED" })
       );
+      expect(drizzleCourierRepository.updateRequestItem).toHaveBeenCalledWith(
+        201,
+        expect.objectContaining({ status: "INSTALLED" })
+      );
+      expect(drizzleCourierRepository.updateRequestItem).not.toHaveBeenCalledWith(202, expect.anything());
 
-      // Verify event was published
-      expect(publishSpy).toHaveBeenCalled();
-       const publishedEvent = publishSpy.mock.calls[0][0] as any;
-      expect(publishedEvent).toBeInstanceOf(ExecutionCompletedEvent);
-      expect(publishedEvent.payload.requestId).toBe(1);
+      // Deduction covers exactly this attempt's serials, inside the transaction
+      expect(mockEngine.prepare).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: 1, serialsForCustody: ["NEW_SN", "NEW_SIM"] })
+      );
+      expect(mockEngine.executePrepared).toHaveBeenCalledTimes(1);
+      expect(drizzleCourierRepository.updateCustodyClosureStatus).toHaveBeenCalledWith(
+        1,
+        expect.any(Array),
+        "CLOSED_SUCCESS"
+      );
+
+      // Verify the completion event was enqueued on the transaction
+      expect(mockOutbox.enqueue).toHaveBeenCalledTimes(1);
+      const [enqueuedEvent] = mockOutbox.enqueue.mock.calls[0] as any[];
+      expect(enqueuedEvent).toBeInstanceOf(ExecutionCompletedEvent);
+      expect(enqueuedEvent.payload.requestId).toBe(1);
+      // The deduction ran on the unit of work's transaction handle, not a cast tx
+      expect(mockEngine.executePrepared.mock.calls[0][1]).toEqual({ handle: "tx" });
+      expect((mockEngine.executePrepared.mock.calls[0][0] as any).ctx.sourceEventId).toBe(enqueuedEvent.id);
     });
 
     it("should create a FAILED attempt, transition request status to reason code, and not publish completion event", async () => {

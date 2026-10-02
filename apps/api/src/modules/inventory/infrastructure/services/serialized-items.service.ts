@@ -3,9 +3,10 @@ import { AppError, NotFoundError } from "@core/errors/AppError";
 import { items, inventoryTransactions, itemHistoryLogs, itemTypes, users, custodyMovements, technicianMovingInventoryEntries, courierRequestItems, systemLogs } from "@shared/schema";
 import { eq, and, inArray, sql, or, desc } from "drizzle-orm";
 import { SerialRecognitionService } from "./serial-recognition.service";
+import { ACTIVE_CUSTODY_STATUSES, isActiveCustodyStatus } from "../../domain/active-custody.policy";
 
 /** Item is considered "held" by a technician in one of these statuses. */
-const TECHNICIAN_HELD_STATUSES = ["IN_TRANSIT_CUSTODY", "RECEIVED_BY_TECHNICIAN", "IN_TRANSIT"];
+// Active custody: the one shared definition (ActiveCustodyPolicy).
 /** courier_request_items statuses that mean the request is finished (safe to ignore for the active-relation guard). */
 const TERMINAL_COURIER_REQUEST_STATUSES = ["DELIVERED", "REJECTED", "MISSING"];
 /** Public itemType URL segment (DEVICE|SIM) → real item_types.category value. No other values are accepted. */
@@ -279,7 +280,7 @@ export class SerializedItemsService {
           and(
             inArray(items.serialNumber, candidates),
             eq(items.currentOwnerId, technicianId),
-            inArray(items.status, ["IN_TRANSIT_CUSTODY", "RECEIVED_BY_TECHNICIAN"])
+            inArray(items.status, [...ACTIVE_CUSTODY_STATUSES])
           )
         )
         .limit(1)
@@ -447,7 +448,7 @@ export class SerializedItemsService {
 
       // Custody check: never trust a client-supplied owner id — compare against the
       // row we just locked. Do not reveal who the actual current owner is.
-      if (item.currentOwnerId !== technicianId || !TECHNICIAN_HELD_STATUSES.includes(item.status)) {
+      if (item.currentOwnerId !== technicianId || !isActiveCustodyStatus(item.status)) {
         throw new AppError(
           "لا يمكنك حذف عنصر غير موجود في عهدتك",
           403,
@@ -622,7 +623,7 @@ export class SerializedItemsService {
       .where(
         and(
           eq(items.currentOwnerId, technicianId),
-          inArray(items.status, ["IN_TRANSIT_CUSTODY", "RECEIVED_BY_TECHNICIAN"])
+          inArray(items.status, [...ACTIVE_CUSTODY_STATUSES])
         )
       );
   }

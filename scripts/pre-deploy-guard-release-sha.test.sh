@@ -11,6 +11,7 @@
 #   2. Missing file                 -> fail (exit 1)
 #   3. Malformed / invalid SHA      -> fail (exit 2)
 #   4. Valid but stale/old SHA      -> fail (exit 3)
+#   5. Dirty-tree build (<sha>-dirty) -> fail (exit 4), even for HEAD
 #
 # Runs entirely against a throwaway temp directory -- never touches the
 # real dist/ or the git index -- so it needs no cleanup of tracked state.
@@ -55,6 +56,13 @@ echo "$OLD_SHA" > "$TMP_DIST/RELEASE_SHA"
 REASON="$(check_release_sha "$TMP_DIST" "$CURRENT_SHA")" && STATUS=0 || STATUS=$?
 [ "$STATUS" -eq 3 ] || fail_case "expected mismatch failure (3), got $STATUS: $REASON"
 echo "PASS: stale/old SHA -> fail (3): $REASON"
+rm -f "$TMP_DIST/RELEASE_SHA"
+
+# 5. Dirty-tree build of the current commit -> fail (4)
+echo "$CURRENT_SHA-dirty" > "$TMP_DIST/RELEASE_SHA"
+REASON="$(check_release_sha "$TMP_DIST" "$CURRENT_SHA")" && STATUS=0 || STATUS=$?
+[ "$STATUS" -eq 4 ] || fail_case "expected dirty-build failure (4), got $STATUS: $REASON"
+echo "PASS: dirty build -> fail (4): $REASON"
 rm -f "$TMP_DIST/RELEASE_SHA"
 
 echo "PRE_DEPLOY_GUARD_RELEASE_SHA_REGRESSION: ALL CHECKS PASSED"

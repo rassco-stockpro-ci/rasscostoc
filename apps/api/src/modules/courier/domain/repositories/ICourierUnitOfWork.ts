@@ -3,6 +3,7 @@ import type { ICourierExecutionsRepository } from "./ICourierExecutionsRepositor
 import type { ICourierPdfRepository } from "./ICourierPdfRepository";
 import type { ICourierDashboardReadRepository } from "./ICourierDashboardReadRepository";
 import type { ICourierInventoryPort } from "./ICourierInventoryPort";
+import type { InventoryTransactionContext, TransactionalOutbox } from "../transaction";
 
 export type CourierTransactionalContext = {
   requestsRepository: ICourierRequestsRepository;
@@ -10,6 +11,14 @@ export type CourierTransactionalContext = {
   pdfRepository: ICourierPdfRepository;
   dashboardRepository: ICourierDashboardReadRepository;
   inventoryPort: ICourierInventoryPort;
+  /** Durable event enqueue on this transaction (domain/transaction.ts). */
+  outbox: TransactionalOutbox;
+  /** This transaction as the inventory deduction layer's handle (domain/transaction.ts). */
+  inventoryTransaction: InventoryTransactionContext;
+  /**
+   * The raw database transaction. Legacy: only EventBus.publish(event, tx)
+   * call sites still use it; new code uses `outbox` / `inventoryTransaction`.
+   */
   tx?: any;
 };
 
