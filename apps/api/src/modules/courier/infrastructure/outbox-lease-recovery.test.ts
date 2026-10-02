@@ -132,6 +132,18 @@ describe("outbox processing lease: crash recovery, fencing, poison events", () =
     expect(item!.status).toBe("DELIVERED");
   }, 30000);
 
+  it("two workers polling at the same moment: the event is claimed once and deducted once", async () => {
+    const legacy = await legacyClose();
+
+    await Promise.all([worker().runOnce(), worker().runOnce(), worker().runOnce()]);
+
+    const r = await row(legacy.eventId);
+    expect(r.status).toBe("PUBLISHED");
+    expect(r.retryCount).toBe(0); // claimed by exactly one worker, never recovered
+    expect(await db.select().from(inventoryDeductionCompletions).where(eq(inventoryDeductionCompletions.requestId, legacy.requestId))).toHaveLength(1);
+    expect(await db.select().from(custodyMovements).where(eq(custodyMovements.itemId, legacy.itemId))).toHaveLength(1);
+  }, 30000);
+
   it("finalizing writes are fenced to the lease owner", async () => {
     const id = await enqueueProbe();
     await outboxRepository.getPendingEvents(10_000, "owner-1");

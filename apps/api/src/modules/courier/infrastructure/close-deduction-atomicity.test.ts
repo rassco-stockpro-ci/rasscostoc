@@ -102,8 +102,8 @@ describe("Close + deduction atomicity, event durability, guards, orphan items, i
     return { id, username };
   }
 
-  /** Item in active custody. `order` fixes the lock order (items are locked by id). */
-  async function seedItem(ownerId: string, serialNumber: string, order: "0" | "f" = "0") {
+  /** Item in active custody. `order` (one hex digit) fixes the lock order (items are locked by id). */
+  async function seedItem(ownerId: string, serialNumber: string, order: string = "0") {
     const itemTypeId = randomUUID();
     await db.insert(itemTypes).values({
       id: itemTypeId, nameAr: `نوع-${itemTypeId.slice(0, 8)}`, nameEn: `Type-${itemTypeId.slice(0, 8)}`, category: "device",
@@ -448,6 +448,89 @@ describe("Close + deduction atomicity, event durability, guards, orphan items, i
     expect(statusOf(s.device)).toBe("INSTALLED");
     expect(statusOf(s.sim)).toBe("INSTALLED");
     expect(statusOf(deviceB)).toBe("RECEIVED");
+  }, 30000);
+
+  // ── multiple devices / multiple SIMs (current supported set: deviceSerials[] + simSerials[]) ──
+
+  /** Two devices + two SIMs held by one technician, locked in the order D1, D2, S1, S2. */
+  async function seedMulti(label: string, rollsAvailable = 10) {
+    const tech = await seedTechnician(label, rollsAvailable);
+    const devices = [serial("HDMD"), serial("HDMD")];
+    const sims = [serial("HDMS"), serial("HDMS")];
+    const ids = {
+      d1: await seedItem(tech.id, devices[0]!, "0"),
+      d2: await seedItem(tech.id, devices[1]!, "1"),
+      s1: await seedItem(tech.id, sims[0]!, "2"),
+      s2: await seedItem(tech.id, sims[1]!, "3"),
+    };
+    const requestId = await seedRequest(label);
+    const body = {
+      installationStatus: COMPLETED,
+      sn: devices[0],
+      simSerial: sims[0],
+      deviceSerials: devices,
+      simSerials: sims,
+      paperRollQty: 2,
+      stickersQty: 0,
+    };
+    return { tech, devices, sims, ids, requestId, body };
+  }
+
+  it("2 devices + 2 SIMs + consumables close in one transaction: all deducted, all INSTALLED, one completion", async () => {
+    const m = await seedMulti("multi-ok");
+    const { service } = makeService();
+
+    await service.saveExecution(m.requestId, m.body, m.tech.id);
+
+    for (const id of Object.values(m.ids)) {
+      const row = await item(id);
+      expect(row.status).toBe("DELIVERED");
+      expect(row.currentOwnerId).toBeNull();
+    }
+    expect(await db.select().from(custodyMovements).where(inArray(custodyMovements.itemId, Object.values(m.ids)))).toHaveLength(4);
+    expect(await rolls(m.tech.id)).toBe(8);
+    const [completion] = await completions(m.requestId);
+    expect(completion!.serializedItemCount).toBe(4);
+    const [exec] = await db.select().from(courierExecutions).where(eq(courierExecutions.requestId, m.requestId));
+    expect(exec!.custodyClosureStatus).toBe("CLOSED_SUCCESS");
+    const links = await db.select().from(courierRequestItems).where(eq(courierRequestItems.requestId, m.requestId));
+    expect(links).toHaveLength(4);
+    expect(links.every((l) => l.status === "INSTALLED")).toBe(true);
+    expect(await completedEvents(m.requestId)).toHaveLength(1);
+  }, 30000);
+
+  it("multi-item close failing on its LAST SIM: no partial deduction, linked RECEIVED items untouched, nothing committed", async () => {
+    const m = await seedMulti("multi-fail");
+    // The request already lists the two devices as RECEIVED (mobile receiving).
+    await db.insert(courierRequestItems).values(
+      m.devices.map((sn) => ({ requestId: m.requestId, itemType: "POS", serialNumber: sn, quantity: 1, status: "RECEIVED", technicianId: m.tech.id }))
+    );
+    const { service, serialized } = makeService();
+    const original = serialized.scanOut.bind(serialized);
+    const scanned: string[] = [];
+    vi.spyOn(serialized, "scanOut").mockImplementation(async (techId, serialNumber, ...rest) => {
+      if (serialNumber === m.sims[1]) throw new Error("injected failure on the last SIM");
+      scanned.push(serialNumber);
+      return original(techId, serialNumber, ...rest);
+    });
+
+    const err = await service.saveExecution(m.requestId, m.body, m.tech.id).catch((e) => e);
+    expect(err.statusCode).toBe(503);
+    expect(scanned).toEqual([m.devices[0], m.devices[1], m.sims[0]]); // three really were scanned out first
+
+    for (const id of Object.values(m.ids)) {
+      const row = await item(id);
+      expect(row.status).toBe("RECEIVED_BY_TECHNICIAN");
+      expect(row.currentOwnerId).toBe(m.tech.id);
+    }
+    expect(await db.select().from(custodyMovements).where(inArray(custodyMovements.itemId, Object.values(m.ids)))).toHaveLength(0);
+    expect(await rolls(m.tech.id)).toBe(10);
+    expect(await completions(m.requestId)).toHaveLength(0);
+    expect(await completedEvents(m.requestId)).toHaveLength(0);
+    expect(await db.select().from(courierExecutions).where(eq(courierExecutions.requestId, m.requestId))).toHaveLength(0);
+    // No orphan request-item mutation: the pre-existing rows are exactly as before, nothing bound.
+    const links = await db.select().from(courierRequestItems).where(eq(courierRequestItems.requestId, m.requestId));
+    expect(links.map((l) => `${l.serialNumber}:${l.status}`).sort()).toEqual(m.devices.map((d) => `${d}:RECEIVED`).sort());
   }, 30000);
 
   // ── active custody policy / request item state machine (governance remediation) ──
