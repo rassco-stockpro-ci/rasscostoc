@@ -95,3 +95,50 @@ These need their own decision before a backend deploy. They are listed, not fixe
 * Production's own `0049_platform_lock_state` file also declares
   `platform_ops_snapshots`; that table is absent from the Production database
   and is not reproduced here.
+
+## Runtime dependency reconciliation (0063)
+
+A read-only runtime review of `main` against the reconciled Production schema
+(every drizzle table/column, every raw-SQL table, every `ON CONFLICT` target)
+found two objects the backend uses that Production lacks. Both are created
+early in main's chain (`0001`, `0004`), so a from-zero database already has
+them; `0063_runtime_dependency_reconcile` (`when 1787840004000`) restates them
+with guards:
+
+| Object | Used by | Without it on Production |
+|---|---|---|
+| `tech_product_unique` on `technician_product_stock (technician_id, product_id)` | `DrizzleTechnicianProductStockRepository.setBalance()` `ON CONFLICT` target, reached from `POST /representative/inventory/sale` | that request fails every time (no unique index matches the `ON CONFLICT` target); the unit of work rolls back |
+| `idempotency_keys` (shape of `0001`) | global `idempotency` middleware, only for POST/PUT/PATCH carrying `x-idempotency-key` | the middleware fails open: the request runs without duplicate protection |
+
+`technician_product_stock` is empty on Production, so the unique index cannot
+fail there. No row is read or changed.
+
+`scripts/on-conflict-audit.ts` reads every `ON CONFLICT` target from the
+backend source (drizzle `onConflictDo*({ target })` resolved through the shared
+schema, and raw `INSERT ... ON CONFLICT (...)`) and fails if any target has no
+matching unique index. The rehearsal runs it before reconciliation (it must
+report exactly the `technician_product_stock` gap), after reconciliation and on
+the from-zero database (both must report none).
+
+### Startup behaviour (observed, not changed)
+
+`server.ts` starts the outbox, jobs and courier-projection workers, then runs
+`migrate()` under an advisory lock, then registers routes and listens. The
+built backend was booted against a restored Production backup with no network
+(`unshare -n`, database over a unix socket) and Postgres statement logging:
+
+* migrations ran in one transaction on their own connection (about 120 ms);
+* during that window the other connections ran only the outbox worker's first
+  poll (`outbox_events`) and the projection worker's claim
+  (`inventory_deduction_completions`); neither table is touched by a pending
+  migration, and no worker statement referenced an object the migrations
+  create;
+* routes were registered only after the commit; the only error logged was the
+  pre-existing missing `feature_flags` table (the service falls back to
+  defaults);
+* row counts were unchanged across the boot; the startup accounting seed
+  (`chart_of_accounts` / `tax_codes`) left the rows identical.
+
+Note: Production's `.env` sets `RUN_DB_MIGRATIONS_ON_STARTUP=false`, but no
+code in `main` (or in Production's current build) reads that variable:
+startup always migrates.
