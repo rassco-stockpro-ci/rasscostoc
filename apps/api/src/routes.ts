@@ -11,6 +11,8 @@ import { readinessManager } from "@core/telemetry/readiness";
 import { metrics } from "@core/telemetry/metrics";
 import { getRecentSpans } from "@core/telemetry/tracer";
 import { requireAdminOrInternal, requireAuth } from "@core/middlewares/auth.middleware";
+import { platformLockMiddleware } from "@core/platform-lock/platform-lock.middleware";
+import { registerPlatformLockRoutes } from "@core/platform-lock/platform-lock.routes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize default data on startup
@@ -41,6 +43,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(503).json({ status: "DOWN" });
     }
   });
+
+  // Owner control + public lock status (allowlisted; auth is secret-based,
+  // not tied to any app user account — see platform-lock.service.ts).
+  registerPlatformLockRoutes(app);
+
+  // Central per-deployment lock — after health/owner routes, before every
+  // other business route (including identity/inventory/accounting/courier
+  // and the leads-audit + AI-engine routes registered further below).
+  app.use(platformLockMiddleware);
 
   // PLATFORM-P0 — observability requires admin or internal service key
   app.get("/api/observability/metrics", requireAdminOrInternal, (_req, res) => {

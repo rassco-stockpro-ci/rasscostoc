@@ -30,7 +30,28 @@ export class ExportSystemBackupUseCase {
       allInventoryRequests,
       allWarehouseTransfers,
     ] = await Promise.all([
-      db.select().from(users),
+      // ROOT FIX (TEMP-SYSTEM-STABILIZATION): the previous `select().from(users)` pulled
+      // every column, including the bcrypt password hash, into a downloadable backup
+      // file. No restore use case exists in this codebase that consumes `users.password`
+      // from a backup, so there is no documented technical need to include it — it is
+      // excluded explicitly rather than stripped after the fact.
+      db.select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        fullName: users.fullName,
+        profileImage: users.profileImage,
+        city: users.city,
+        role: users.role,
+        regionId: users.regionId,
+        employeeCode: users.employeeCode,
+        technicianCode: users.technicianCode,
+        department: users.department,
+        permissions: users.permissions,
+        isActive: users.isActive,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+      }).from(users),
       db.select().from(regions),
       db.select().from(itemTypes),
       db.select().from(inventoryItems),

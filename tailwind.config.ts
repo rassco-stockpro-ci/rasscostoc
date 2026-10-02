@@ -17,7 +17,12 @@ const rasscoTeal = {
 
 export default {
   darkMode: ["class"],
-  content: ["./apps/portal/index.html", "./apps/portal/src/**/*.{js,jsx,ts,tsx}"],
+  content: [
+    "./apps/portal/index.html",
+    "./apps/portal/src/**/*.{js,jsx,ts,tsx}",
+    "./apps/fani-web/index.html",
+    "./apps/fani-web/src/**/*.{js,jsx,ts,tsx}",
+  ],
   theme: {
     extend: {
       borderRadius: {
@@ -125,10 +130,15 @@ export default {
             height: "0",
           },
         },
+        "slide-in-left": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "slide-in-left": "slide-in-left 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
       },
     },
   },

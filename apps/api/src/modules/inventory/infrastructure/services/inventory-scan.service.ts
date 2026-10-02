@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import {
+  idempotencyKeys,
   itemTypes,
   stockMovements,
   systemLogs,
@@ -79,15 +80,32 @@ export class InventoryScanService {
       throw new InventoryScanError(404, "لم يتم العثور على نوع المنتج عبر كود المسح");
     }
 
-    const duplicateResult = await this.checkIdempotency(normalizedInput.idempotencyKey);
-    if (duplicateResult) {
-      return duplicateResult;
+    // ERP-008-class fix: the previous idempotency check ran a plain SELECT
+    // against systemLogs before the transaction opened, with the durable
+    // record written only after commit -- concurrent requests with the same
+    // key could all observe "not processed yet" and all execute. This reuses
+    // the same DB-backed atomic primitive already proven in
+    // core/middlewares/idempotency.middleware.ts (idempotency_keys, key as
+    // PRIMARY KEY, 23505 on the claim insert = another request is already
+    // handling it), namespaced so this service's body-supplied keys cannot
+    // collide with that header-based middleware's keys on other routes.
+    const idempotencyKey = normalizedInput.idempotencyKey
+      ? `inventory-scan:${normalizedInput.idempotencyKey}`
+      : null;
+
+    if (idempotencyKey) {
+      const cached = await this.claimIdempotencyKey(idempotencyKey);
+      if (cached) {
+        return cached;
+      }
     }
 
     const operationId = randomUUID();
 
     try {
       const result = await db.transaction(async (tx) => {
+        await this.lockMutationAnchor(tx, normalizedInput);
+
         if (normalizedInput.operationType === "ADD_STOCK" || normalizedInput.operationType === "DEDUCT_STOCK") {
           return this.executeSingleOwnerMovement(tx, {
             itemTypeId: itemType.id,
@@ -125,7 +143,7 @@ export class InventoryScanService {
         result,
       });
 
-      return {
+      const response = {
         success: true,
         duplicate: false,
         operationId,
@@ -136,6 +154,12 @@ export class InventoryScanService {
         },
         movement: result,
       };
+
+      if (idempotencyKey) {
+        await this.completeIdempotencyKey(idempotencyKey, response);
+      }
+
+      return response;
     } catch (error: any) {
       await this.logScanEvent({
         actor,
@@ -146,6 +170,10 @@ export class InventoryScanService {
         input: normalizedInput,
         errorMessage: error?.message || "Unknown error",
       });
+
+      if (idempotencyKey) {
+        await this.releaseIdempotencyKeyOnFailure(idempotencyKey);
+      }
 
       if (error instanceof InventoryScanError) {
         throw error;
@@ -232,41 +260,92 @@ export class InventoryScanService {
     return byName || undefined;
   }
 
-  private async checkIdempotency(idempotencyKey?: string) {
-    if (!idempotencyKey) {
-      return null;
+  /**
+   * Atomically claims an idempotency key using the same primitive already
+   * proven race-free in core/middlewares/idempotency.middleware.ts (ERP-008
+   * Phase 4): the key column is a real PRIMARY KEY, so when two concurrent
+   * requests both see no existing row and both attempt the claim insert,
+   * exactly one succeeds and the other gets a 23505 unique-violation --
+   * which is treated as "another request is already handling this", not a
+   * generic error. Returns the cached response for an already-completed key,
+   * or null when this call has won the claim and the caller should proceed.
+   */
+  private async claimIdempotencyKey(key: string): Promise<unknown | null> {
+    const now = new Date();
+    const [existing] = await db.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, key)).limit(1);
+
+    if (existing) {
+      if (existing.expiresAt < now) {
+        await db.delete(idempotencyKeys).where(eq(idempotencyKeys.key, key));
+      } else if (existing.responseStatus === 102) {
+        throw new InventoryScanError(409, "الطلب قيد المعالجة حالياً بنفس مفتاح منع التكرار، يرجى المحاولة بعد قليل.");
+      } else {
+        return { ...JSON.parse(existing.responseBody), duplicate: true };
+      }
     }
 
-    const detailsPattern = `%\"idempotencyKey\":\"${idempotencyKey.replace(/%/g, "\\%").replace(/_/g, "\\_")}\"%`;
+    const lockExpiry = new Date(Date.now() + 5 * 60 * 1000);
+    try {
+      await db.insert(idempotencyKeys).values({
+        key,
+        responseStatus: 102,
+        responseBody: "",
+        expiresAt: lockExpiry,
+      });
+    } catch (insertError: any) {
+      if (insertError?.code === "23505") {
+        throw new InventoryScanError(409, "الطلب قيد المعالجة حالياً بنفس مفتاح منع التكرار، يرجى المحاولة بعد قليل.");
+      }
+      throw insertError;
+    }
 
-    const [existing] = await db
-      .select({
-        id: systemLogs.id,
-        description: systemLogs.description,
-        createdAt: systemLogs.createdAt,
+    return null;
+  }
+
+  private async completeIdempotencyKey(key: string, response: unknown) {
+    await db
+      .update(idempotencyKeys)
+      .set({
+        responseStatus: 200,
+        responseBody: JSON.stringify(response),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       })
-      .from(systemLogs)
-      .where(
-        and(
-          eq(systemLogs.action, "inventory_scan_execute"),
-          sql`${systemLogs.details} LIKE ${detailsPattern}`,
-        ),
-      )
-      .orderBy(desc(systemLogs.createdAt))
-      .limit(1);
+      .where(eq(idempotencyKeys.key, key));
+  }
 
-    if (!existing) {
-      return null;
+  private async releaseIdempotencyKeyOnFailure(key: string) {
+    try {
+      await db.delete(idempotencyKeys).where(eq(idempotencyKeys.key, key));
+    } catch (releaseError) {
+      console.error("Failed to release idempotency key after failure", releaseError);
+    }
+  }
+
+  /**
+   * DB-R1 pattern (see DrizzleWithdrawTechnicianInventoryToWarehouseUnitOfWork,
+   * Phase C4.6C.2): locks an always-existing parent row (the warehouse, or
+   * the technician's own users row) FIRST, before any entry lookup. This
+   * serializes concurrent requests for the same (warehouse|technician,
+   * itemType) pair even when the balance entry row does not exist yet --
+   * a bare SELECT ... FOR UPDATE on a possibly-absent row locks nothing.
+   */
+  private async lockMutationAnchor(tx: any, input: ExecuteInventoryScanInput) {
+    const isSingleOwnerOp = input.operationType === "ADD_STOCK" || input.operationType === "DEDUCT_STOCK";
+
+    if (isSingleOwnerOp) {
+      if (input.ownerType === "warehouse") {
+        await tx.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.id, input.ownerId!)).for("update");
+      } else {
+        await tx.select({ id: users.id }).from(users).where(eq(users.id, input.ownerId!)).for("update");
+      }
+      return;
     }
 
-    return {
-      success: true,
-      duplicate: true,
-      message: "تمت معالجة عملية المسح مسبقاً بنفس المفتاح",
-      operationLogId: existing.id,
-      description: existing.description,
-      processedAt: existing.createdAt,
-    };
+    // TRANSFER_TO_TECHNICIAN / WITHDRAW_FROM_TECHNICIAN: locking the
+    // warehouse anchor alone is sufficient to serialize both sides of the
+    // transfer for a given (warehouse, technician, itemType), matching the
+    // sibling withdrawal unit-of-work exactly.
+    await tx.select({ id: warehouses.id }).from(warehouses).where(eq(warehouses.id, input.warehouseId!)).for("update");
   }
 
   private async executeSingleOwnerMovement(
@@ -283,7 +362,7 @@ export class InventoryScanService {
     const signedQuantity = args.operationType === "ADD_STOCK" ? args.quantity : -args.quantity;
 
     if (args.ownerType === "warehouse") {
-      await this.assertWarehouseExists(args.ownerId);
+      await this.assertWarehouseExists(tx, args.ownerId);
       const balance = await this.adjustWarehouseBalance(tx, {
         warehouseId: args.ownerId,
         itemTypeId: args.itemTypeId,
@@ -303,7 +382,7 @@ export class InventoryScanService {
       };
     }
 
-    await this.assertTechnicianExists(args.ownerId);
+    await this.assertTechnicianExists(tx, args.ownerId);
     const balance = await this.adjustTechnicianMovingBalance(tx, {
       technicianId: args.ownerId,
       itemTypeId: args.itemTypeId,
@@ -334,8 +413,8 @@ export class InventoryScanService {
       quantity: number;
     },
   ) {
-    await this.assertWarehouseExists(args.warehouseId);
-    await this.assertTechnicianExists(args.technicianId);
+    await this.assertWarehouseExists(tx, args.warehouseId);
+    await this.assertTechnicianExists(tx, args.technicianId);
 
     const warehouseDelta = args.operationType === "TRANSFER_TO_TECHNICIAN" ? -args.quantity : args.quantity;
     const technicianDelta = -warehouseDelta;
@@ -376,6 +455,18 @@ export class InventoryScanService {
       delta: number;
     },
   ) {
+    // Race-free insert-if-missing: warehouse_inventory_entries has a real
+    // UNIQUE(warehouseId, itemTypeId) constraint
+    // (warehouse_inventory_entries_warehouse_item_unique), and the caller
+    // already holds the warehouse anchor lock (lockMutationAnchor), so this
+    // cannot race with another transaction touching the same row.
+    await tx
+      .insert(warehouseInventoryEntries)
+      .values({ warehouseId: args.warehouseId, itemTypeId: args.itemTypeId, boxes: 0, units: 0 })
+      .onConflictDoNothing({
+        target: [warehouseInventoryEntries.warehouseId, warehouseInventoryEntries.itemTypeId],
+      });
+
     const [entry] = await tx
       .select()
       .from(warehouseInventoryEntries)
@@ -385,7 +476,7 @@ export class InventoryScanService {
           eq(warehouseInventoryEntries.itemTypeId, args.itemTypeId),
         ),
       )
-      .limit(1);
+      .for("update");
 
     const before = args.packagingType === "box" ? Number(entry?.boxes || 0) : Number(entry?.units || 0);
     const after = before + args.delta;
@@ -397,23 +488,14 @@ export class InventoryScanService {
     const nextBoxes = args.packagingType === "box" ? after : Number(entry?.boxes || 0);
     const nextUnits = args.packagingType === "unit" ? after : Number(entry?.units || 0);
 
-    if (entry) {
-      await tx
-        .update(warehouseInventoryEntries)
-        .set({
-          boxes: nextBoxes,
-          units: nextUnits,
-          updatedAt: new Date(),
-        })
-        .where(eq(warehouseInventoryEntries.id, entry.id));
-    } else {
-      await tx.insert(warehouseInventoryEntries).values({
-        warehouseId: args.warehouseId,
-        itemTypeId: args.itemTypeId,
+    await tx
+      .update(warehouseInventoryEntries)
+      .set({
         boxes: nextBoxes,
         units: nextUnits,
-      });
-    }
+        updatedAt: new Date(),
+      })
+      .where(eq(warehouseInventoryEntries.id, entry.id));
 
     await this.syncWarehouseLegacyBalance(tx, {
       warehouseId: args.warehouseId,
@@ -434,7 +516,16 @@ export class InventoryScanService {
       delta: number;
     },
   ) {
-    const [entry] = await tx
+    // No unique constraint exists on (technicianId, itemTypeId) for this
+    // table (see DrizzleWithdrawTechnicianInventoryToWarehouseUnitOfWork,
+    // Phase C4.6C.2 -- schema-change-free zone for that remediation slice,
+    // tracked separately). The caller's anchor lock (lockMutationAnchor --
+    // the warehouse row when a warehouse is involved, otherwise the
+    // technician's own users row) serializes the realistic same-technician
+    // race; a first-ever-row race for the same technician across two
+    // different warehouses simultaneously is the same narrow, already-
+    // accepted residual edge as the sibling withdrawal path.
+    let [entry] = await tx
       .select()
       .from(technicianMovingInventoryEntries)
       .where(
@@ -443,7 +534,27 @@ export class InventoryScanService {
           eq(technicianMovingInventoryEntries.itemTypeId, args.itemTypeId),
         ),
       )
-      .limit(1);
+      .for("update");
+
+    if (!entry) {
+      await tx.insert(technicianMovingInventoryEntries).values({
+        technicianId: args.technicianId,
+        itemTypeId: args.itemTypeId,
+        boxes: 0,
+        units: 0,
+      });
+
+      [entry] = await tx
+        .select()
+        .from(technicianMovingInventoryEntries)
+        .where(
+          and(
+            eq(technicianMovingInventoryEntries.technicianId, args.technicianId),
+            eq(technicianMovingInventoryEntries.itemTypeId, args.itemTypeId),
+          ),
+        )
+        .for("update");
+    }
 
     const before = args.packagingType === "box" ? Number(entry?.boxes || 0) : Number(entry?.units || 0);
     const after = before + args.delta;
@@ -455,23 +566,14 @@ export class InventoryScanService {
     const nextBoxes = args.packagingType === "box" ? after : Number(entry?.boxes || 0);
     const nextUnits = args.packagingType === "unit" ? after : Number(entry?.units || 0);
 
-    if (entry) {
-      await tx
-        .update(technicianMovingInventoryEntries)
-        .set({
-          boxes: nextBoxes,
-          units: nextUnits,
-          updatedAt: new Date(),
-        })
-        .where(eq(technicianMovingInventoryEntries.id, entry.id));
-    } else {
-      await tx.insert(technicianMovingInventoryEntries).values({
-        technicianId: args.technicianId,
-        itemTypeId: args.itemTypeId,
+    await tx
+      .update(technicianMovingInventoryEntries)
+      .set({
         boxes: nextBoxes,
         units: nextUnits,
-      });
-    }
+        updatedAt: new Date(),
+      })
+      .where(eq(technicianMovingInventoryEntries.id, entry.id));
 
     await this.syncTechnicianLegacyBalance(tx, {
       technicianId: args.technicianId,
@@ -625,8 +727,19 @@ export class InventoryScanService {
     return `warehouse:${input.warehouseId}`;
   }
 
-  private async assertWarehouseExists(warehouseId: string) {
-    const [warehouse] = await db
+  /**
+   * Takes `tx`, not the global `db`, and MUST keep doing so: this is called
+   * from inside the mutation transaction, which -- since lockMutationAnchor
+   * -- can genuinely block waiting for a row lock while holding its pool
+   * connection. Using the global pool here would need a SECOND connection
+   * from the same finite pool to finish a transaction that is itself the
+   * thing other queued transactions are waiting to release; with enough
+   * concurrent callers that pool-starves (proven empirically: N=20
+   * concurrent distinct-key requests hung indefinitely, not merely slowly,
+   * before this was scoped to tx).
+   */
+  private async assertWarehouseExists(tx: any, warehouseId: string) {
+    const [warehouse] = await tx
       .select({ id: warehouses.id })
       .from(warehouses)
       .where(eq(warehouses.id, warehouseId))
@@ -637,8 +750,8 @@ export class InventoryScanService {
     }
   }
 
-  private async assertTechnicianExists(technicianId: string) {
-    const [technician] = await db
+  private async assertTechnicianExists(tx: any, technicianId: string) {
+    const [technician] = await tx
       .select({ id: users.id })
       .from(users)
       .where(

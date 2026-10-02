@@ -73,3 +73,7 @@ test-results/
 /config/mobile-sdui-filters.json
 !/config/mobile-sdui-filters.json.example
 
+
+# platform lock runtime state (never committed)
+data/platform-lock.json
+data/platform-ops-history.json

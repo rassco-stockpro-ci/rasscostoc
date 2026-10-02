@@ -17,11 +17,30 @@ describe('CustodyEngine Unit Tests', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // limitRows backs .limit(1)'s return: a plain resolved array for
+    // callers that await it directly (e.g. syncMovingInventory's own
+    // unlocked .limit(1)), and ALSO chainable via .for("update") for
+    // deliverItem/returnItem's locked SELECT (BLOCKER #1 fix) -- both
+    // read the same configured rows, matching real Drizzle's query
+    // builder shape where .limit()'s result is itself awaitable AND
+    // extendable with .for().
+    let limitRows: any[] = [];
     mockTx = {
       select: vi.fn().mockReturnThis(),
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue([]),
+      limit: vi.fn().mockImplementation(() => {
+        const p = Promise.resolve(limitRows);
+        return {
+          for: vi.fn().mockImplementation(() => Promise.resolve(limitRows)),
+          then: p.then.bind(p),
+          catch: p.catch.bind(p),
+          finally: p.finally.bind(p),
+        };
+      }),
+      setLimitRows: (rows: any[]) => {
+        limitRows = rows;
+      },
       update: vi.fn().mockReturnThis(),
       set: vi.fn().mockReturnThis(),
       insert: vi.fn().mockReturnThis(),
@@ -117,7 +136,7 @@ describe('CustodyEngine Unit Tests', () => {
         status: 'RECEIVED_BY_TECHNICIAN',
         itemTypeId: 'type-1',
       };
-      mockTx.limit.mockResolvedValue([existingItem]);
+      mockTx.setLimitRows([existingItem]);
 
       await CustodyEngine.deliverItem('item-1', 'ORD-1', 'tech-1', 'admin-1', mockTx);
       expect(mockTx.update).toHaveBeenCalled();
@@ -132,7 +151,7 @@ describe('CustodyEngine Unit Tests', () => {
         status: 'RECEIVED_BY_TECHNICIAN',
         itemTypeId: 'type-1',
       };
-      mockTx.limit.mockResolvedValue([existingItem]);
+      mockTx.setLimitRows([existingItem]);
 
       await expect(
         CustodyEngine.deliverItem('item-1', 'ORD-1', 'tech-1', 'admin-1', mockTx)

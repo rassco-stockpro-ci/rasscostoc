@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { z } from "zod";
-import { requireAuth } from "@core/middlewares/auth.middleware";
+import { requireAuth, requireAdmin } from "@core/middlewares/auth.middleware";
 import { requireCatalogedPermission } from "@core/middlewares/requireCatalogedPermission.middleware";
 import { inventoryContainer } from "@server/composition/inventory.container";
 import { normalizeCreateWarehouseTransferPayload } from "@modules/inventory/application/inventory/use-cases/WarehouseTransferOperations.use-case";
@@ -92,5 +92,15 @@ export function registerWarehouseTransferOperationsRoutes(app: Express): void {
   app.get("/api/verification/assets/:identifier", requireAuth, controller.lookupAssetTracking);
 
   // تحديث حالة السيريال من الأدمن (باستخدام محرك العهدة الموحد)
-  app.patch("/api/items/:id/status", requireAuth, controller.updateItemStatus);
+  // SECURITY FIX (backported from cert/db-backend-phase3-20260923 @
+  // f5ce2328): this is an administrative override capable of forcing ANY
+  // item to DELIVERED/RETURNED regardless of who currently owns it --
+  // requireAuth alone (any authenticated role, including an unrelated
+  // technician) previously reached it with no role check anywhere in the
+  // path. requireAdmin restores the boundary the "adminId" naming
+  // throughout this call chain always implied. Defense-in-depth: the
+  // service layer independently re-verifies the caller's role from the DB
+  // (see WarehouseTransferService.updateItemStatus) rather than trusting
+  // this middleware alone.
+  app.patch("/api/items/:id/status", requireAuth, requireAdmin, controller.updateItemStatus);
 }

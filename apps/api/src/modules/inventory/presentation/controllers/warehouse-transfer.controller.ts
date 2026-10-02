@@ -202,14 +202,18 @@ export class WarehouseTransferController {
   updateItemStatus = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const { status, orderNumber, warehouseId } = req.body;
-    const adminId = req.user!.id;
+    // The person who INITIATED this request -- never to be confused with
+    // an item's own currentOwnerId inside the service. requireAdmin on the
+    // route already gates this, but the service independently re-verifies
+    // the role from the DB using only this id.
+    const callerId = req.user!.id;
 
     if (!status) {
       return res.status(400).json({ message: "الحالة مطلوبة" });
     }
 
     const result = await this.warehouseTransferService.updateItemStatus(
-      adminId,
+      callerId,
       id,
       status,
       orderNumber,

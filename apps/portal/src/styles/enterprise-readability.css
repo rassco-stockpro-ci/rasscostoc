@@ -57,6 +57,33 @@
   line-height: 1.35;
 }
 
+/* Headings inside a dark hero/panel (solid OR gradient dark background)
+   keep light text — the unconditional h1-h4 darkening above assumes a
+   light page background, which isn't true for colorful gradient
+   headers (e.g. the verification-page hero banner:
+   bg-gradient-to-r from-teal-700 via-cyan-800 to-slate-900), so those
+   headings need the same rescue the .text-white remap already gets. */
+.rassco-light-surface :is(
+  [class*="bg-slate-9"], [class*="bg-slate-8"],
+  [class*="bg-zinc-9"], [class*="bg-zinc-8"],
+  [class*="bg-gray-9"], [class*="bg-neutral-9"],
+  [class*="bg-[#0"], [class*="bg-[#1"],
+  [class*="from-slate-9"], [class*="from-slate-8"],
+  [class*="via-slate-9"], [class*="via-slate-8"],
+  [class*="to-slate-9"], [class*="to-slate-8"],
+  [class*="from-zinc-9"], [class*="from-zinc-8"],
+  [class*="via-zinc-9"], [class*="via-zinc-8"],
+  [class*="to-zinc-9"], [class*="to-zinc-8"],
+  [class*="from-gray-9"], [class*="via-gray-9"], [class*="to-gray-9"],
+  [class*="from-neutral-9"], [class*="via-neutral-9"], [class*="to-neutral-9"],
+  [class*="from-teal-9"], [class*="via-teal-9"], [class*="to-teal-9"],
+  [class*="from-teal-8"], [class*="via-teal-8"], [class*="to-teal-8"],
+  [class*="from-teal-7"], [class*="via-cyan-8"], [class*="to-cyan-9"]
+) :is(h1, h2, h3, h4) {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
 /* Remap pale / white text classes → readable dark (light shell only) */
 .rassco-light-surface :where(
   .text-white,
@@ -174,7 +201,14 @@
   color: #ffffff !important;
 }
 
-/* Dark nested panels (legacy courier blocks) keep light text */
+/* Dark nested panels (legacy courier blocks) keep light text.
+   Matches both solid dark backgrounds (bg-slate-900) AND Tailwind
+   gradient cards built from from-/via-/to- stop classes (e.g.
+   bg-gradient-to-r from-slate-900 via-slate-800 to-teal-950, used by
+   the verification-page hero card) — a solid-only selector let a
+   dark gradient card's text-white children fall through this rescue
+   rule and get force-darkened by the plain-pale-text remap above,
+   making them unreadable against their own dark background. */
 .rassco-light-surface :is(
   [class*="bg-slate-9"],
   [class*="bg-slate-8"],
@@ -183,7 +217,31 @@
   [class*="bg-gray-9"],
   [class*="bg-neutral-9"],
   [class*="bg-[#0"],
-  [class*="bg-[#1"]
+  [class*="bg-[#1"],
+  [class*="from-slate-9"],
+  [class*="from-slate-8"],
+  [class*="via-slate-9"],
+  [class*="via-slate-8"],
+  [class*="to-slate-9"],
+  [class*="to-slate-8"],
+  [class*="from-zinc-9"],
+  [class*="from-zinc-8"],
+  [class*="via-zinc-9"],
+  [class*="via-zinc-8"],
+  [class*="to-zinc-9"],
+  [class*="to-zinc-8"],
+  [class*="from-gray-9"],
+  [class*="via-gray-9"],
+  [class*="to-gray-9"],
+  [class*="from-neutral-9"],
+  [class*="via-neutral-9"],
+  [class*="to-neutral-9"],
+  [class*="from-teal-9"],
+  [class*="via-teal-9"],
+  [class*="to-teal-9"],
+  [class*="from-teal-8"],
+  [class*="via-teal-8"],
+  [class*="to-teal-8"]
 ) :where(.text-white, .text-slate-50, .text-slate-100, .text-slate-200) {
   color: #ffffff !important;
   -webkit-text-fill-color: #ffffff !important;

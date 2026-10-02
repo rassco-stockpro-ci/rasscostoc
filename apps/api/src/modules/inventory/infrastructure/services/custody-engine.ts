@@ -114,29 +114,48 @@ export class CustodyEngine {
     tx: any = db
   ) {
     // 1. استعلام للتحقق من وجود الجهاز والمالك الحالي
+    // D5-class fix (same defect class fixed in returnItem below): a plain
+    // unlocked SELECT here let two concurrent deliverItem calls for the
+    // SAME item both read currentOwnerId===technicianId as true before
+    // either wrote, then both proceed to write -- double delivery, double
+    // inventoryTransactions/custodyMovements rows, double
+    // syncMovingInventory decrement. FOR UPDATE closes that race window.
     const [item] = await tx
       .select()
       .from(items)
       .where(eq(items.id, itemId))
-      .limit(1);
+      .limit(1)
+      .for("update");
 
     if (!item) {
       throw new Error("الجهاز غير موجود بقواعد البيانات");
     }
 
+    // Explicit split null-owner vs wrong-owner rejection, no fallthrough
+    // -- matches returnItem's D5 fix exactly.
+    if (item.currentOwnerId === null) {
+      throw new Error("الجهاز غير موجود حالياً في عهدة أي فني (تم تسليمه مسبقاً أو لم يُستلم بعد)");
+    }
     if (item.currentOwnerId !== technicianId) {
       throw new Error("الجهاز المطلوب تسليمه ليس في عهدة هذا الفني حالياً");
     }
 
-    // 2. تحديث السيريال وتحرير العهدة
-    await tx
+    // 2. تحديث السيريال وتحرير العهدة -- CAS defense-in-depth فوق FOR UPDATE:
+    // الشرط يعيد التحقق من currentOwnerId وقت الكتابة نفسه، فإن خسر طرف
+    // متزامن السباق فإن UPDATE يطابق صفر صفوف ويُرفض أدناه.
+    const [updatedItem] = await tx
       .update(items)
       .set({
         status: "DELIVERED",
         currentOwnerId: null, // تحرير ملكية الفني للعهدة
         updatedAt: new Date(),
       })
-      .where(eq(items.id, itemId));
+      .where(and(eq(items.id, itemId), eq(items.currentOwnerId, technicianId)))
+      .returning({ id: items.id });
+
+    if (!updatedItem) {
+      throw new Error("فشل تسليم الجهاز — تم تغيير حالة العهدة بواسطة عملية أخرى بالتزامن");
+    }
 
     // 3. تسجيل حركة المخزون التاريخية
     await tx.insert(inventoryTransactions).values({
@@ -190,14 +209,34 @@ export class CustodyEngine {
       .select()
       .from(items)
       .where(eq(items.id, itemId))
-      .limit(1);
+      .limit(1)
+      .for("update");
 
     if (!item) {
       throw new Error("الجهاز غير موجود بقواعد البيانات");
     }
 
+    // D5 fix (backported from cert/db-backend-phase3-20260923 @ 2758a42e):
+    // the locked row is authoritative, and a return is valid ONLY while
+    // the item is currently owned by the requesting technician -- an
+    // explicit equality check, not a nullable-owner conditional. A null
+    // owner (already returned / never received) is a distinct rejection
+    // reason from a non-null, non-matching owner; neither reaches a
+    // write via fallthrough.
+    if (item.currentOwnerId === null) {
+      throw new Error("الجهاز غير موجود حالياً في عهدة أي فني (تم إرجاعه مسبقاً أو لم يُستلم بعد)");
+    }
+    if (item.currentOwnerId !== technicianId) {
+      throw new Error("الجهاز المطلوب إرجاعه ليس في عهدة هذا الفني حالياً");
+    }
+
     // 1. تحديث حالة وموقع الصنف
-    await tx
+    // D5 fix: CAS defense-in-depth on top of the FOR UPDATE lock and the
+    // pre-check above -- the WHERE clause re-asserts currentOwnerId at
+    // write time (matching the existing DB-R9 pattern in
+    // DrizzleCourierRepository.transferCustodyToTechnician). A losing
+    // concurrent request's UPDATE matches zero rows and is rejected here.
+    const [updatedItem] = await tx
       .update(items)
       .set({
         status: "RETURNED",
@@ -205,7 +244,12 @@ export class CustodyEngine {
         warehouseId,
         updatedAt: new Date(),
       })
-      .where(eq(items.id, itemId));
+      .where(and(eq(items.id, itemId), eq(items.currentOwnerId, technicianId)))
+      .returning({ id: items.id });
+
+    if (!updatedItem) {
+      throw new Error("فشل إرجاع الجهاز — تم تغيير حالة العهدة بواسطة عملية أخرى بالتزامن");
+    }
 
     // 2. تسجيل حركة المخزون التاريخية
     await tx.insert(inventoryTransactions).values({

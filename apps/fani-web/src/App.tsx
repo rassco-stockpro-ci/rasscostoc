@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { LoginPage } from './pages/LoginPage';
 import { TransfersPage } from './pages/TransfersPage';
 import { ShipmentScanPage } from './pages/ShipmentScanPage';
+import { ProductsPage } from './pages/ProductsPage';
 import { Header } from './components/Header';
+import { NavTabs } from './components/NavTabs';
 import { api, User } from './api/client';
 
 export const App: React.FC = () => {
@@ -12,7 +14,7 @@ export const App: React.FC = () => {
   const [activeTransferId, setActiveTransferId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [pendingCount, setPendingCount] = useState(3);
+  const [pendingCount, setPendingCount] = useState(0);
 
   // Hash Router Listener & URL Permalinks
   useEffect(() => {
@@ -23,6 +25,9 @@ export const App: React.FC = () => {
         const id = parts[2];
         setActiveTransferId(id && id.trim().length > 0 ? id : null);
         setCurrentRoute('scan');
+      } else if (hash.startsWith('#/products')) {
+        setCurrentRoute('products');
+        setActiveTransferId(null);
       } else {
         setCurrentRoute('transfers');
         setActiveTransferId(null);
@@ -39,27 +44,33 @@ export const App: React.FC = () => {
   }, []);
 
   const checkAuth = async () => {
-    const savedUser = localStorage.getItem('fani_user');
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (_) {}
-    }
+    // Verify session with API first — do NOT pre-load user from localStorage
+    // to avoid showing a stale/expired session (e.g. old eissa11 session)
     const me = await api.getMe();
     if (me) {
       setUser(me);
+      localStorage.setItem('fani_user', JSON.stringify(me));
+    } else {
+      // No valid session — clear any stale data
+      localStorage.removeItem('fani_auth_token');
+      localStorage.removeItem('fani_user');
+      setUser(null);
     }
     setLoading(false);
 
-    const transfers = await api.getTransfers();
-    if (transfers) {
-      const p = transfers.filter((t: any) => t.status === 'pending' || t.status === 'PENDING').length;
-      setPendingCount(p > 0 ? p : 3);
+    if (me) {
+      const transfers = await api.getTransfers();
+      if (transfers) {
+        const p = transfers.filter((t: any) => t.status === 'pending' || t.status === 'PENDING').length;
+        setPendingCount(p);
+      }
     }
   };
 
   const handleLogout = () => {
     api.logout();
+    localStorage.clear();
+    sessionStorage.clear();
     setUser(null);
     window.location.hash = '#/login';
   };
@@ -94,8 +105,8 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-['Cairo'] text-slate-900 antialiased selection:bg-[#00A896] selection:text-white">
-      
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-['Cairo'] text-slate-900 antialiased selection:bg-[#00A896] selection:text-white overflow-x-hidden">
+
       {/* 1. Sticky Top Navigation Header Bar */}
       <Header
         user={user}
@@ -106,13 +117,18 @@ export const App: React.FC = () => {
         onSearchChange={setSearchQuery}
       />
 
+      {/* 1.5 Section Nav Tabs (hidden on the scan station) */}
+      {currentRoute !== 'scan' && <NavTabs currentRoute={currentRoute} />}
+
       {/* 2. Main Page Content Container */}
-      <main className="flex-1 p-6 lg:p-8 max-w-[1920px] w-full mx-auto">
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1920px] w-full mx-auto">
         {currentRoute === 'scan' ? (
           <ShipmentScanPage
             transferId={activeTransferId}
             onBack={handleBackToTransfers}
           />
+        ) : currentRoute === 'products' ? (
+          <ProductsPage searchQuery={searchQuery} />
         ) : (
           <TransfersPage
             user={user}

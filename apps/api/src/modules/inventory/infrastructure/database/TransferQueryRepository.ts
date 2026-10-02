@@ -95,7 +95,22 @@ export class TransferQueryRepository implements ITransferQueryRepository {
 
     return transfers.map(transfer => ({
       ...transfer,
+      // LEGACY COMPAT: the portal UI (built before the serial-scan documentation
+      // workflow existed) has always treated 'accepted' as the single terminal
+      // "done" status for a transfer, in dozens of call sites. We keep collapsing
+      // the newer 'approved' DB status into 'accepted' here so none of that
+      // existing portal behavior changes.
+      //
+      // ROOT FIX: this collapse made it IMPOSSIBLE for the fani-web technician
+      // app (which needs to tell "accepted but still awaiting serial-scan
+      // documentation" apart from "genuinely fully confirmed/approved") to ever
+      // see a real 'approved' status from this list endpoint — every completed
+      // transfer looked identical to a still-open one, so completed transfers
+      // kept showing as "needs action". `rawStatus` exposes the true,
+      // un-collapsed DB status for that purpose without touching the legacy
+      // `status` field any existing consumer relies on.
       status: transfer.status === 'approved' ? 'accepted' : transfer.status,
+      rawStatus: transfer.status,
       itemNameAr: itemNameMap[transfer.itemType] || transfer.itemType,
       warehouseName: transfer.warehouseName || undefined,
       technicianName: transfer.technicianName || undefined,

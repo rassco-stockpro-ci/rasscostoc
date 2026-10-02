@@ -1,9 +1,10 @@
 import { db } from "@core/config/db";
-import { items, itemTypes, inventoryTransactions, itemHistoryLogs, warehouseTransfers, technicianMovingInventoryEntries, custodyMovements } from "@shared/schema";
+import { items, itemTypes, inventoryTransactions, itemHistoryLogs, warehouseTransfers, technicianMovingInventoryEntries, custodyMovements, users } from "@shared/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { CustodyEngine } from "./custody-engine";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
 import { ACTIVE_CUSTODY_STATUSES } from "../../domain/active-custody.policy";
+import { AppError, NotFoundError, AuthorizationError } from "@core/errors/AppError";
 
 export class WarehouseTransferService {
   async getWarehouseTransferById(id: string) {
@@ -31,10 +32,15 @@ export class WarehouseTransferService {
       .limit(1);
 
     if (existingItem) {
+      // BUGFIX: these were plain Error throws — asyncHandler's default error
+      // mapping turns any non-AppError into a generic 500 "Internal server
+      // error", hiding this legitimate, expected validation message (a
+      // duplicate serial scan is a normal occurrence, not a server fault)
+      // from the technician. Now a proper 409 Conflict with the real message.
       if (existingItem.status === "DELIVERED") {
-        throw new Error(`المنتج (${cleanSerial}) موجود وحالته مغلق`);
+        throw new AppError(`المنتج (${cleanSerial}) موجود وحالته مغلق`, 409, true, "SERIAL_ALREADY_DELIVERED");
       } else {
-        throw new Error(`المنتج (${cleanSerial}) موجود مسبقاً وحالته نشط`);
+        throw new AppError(`المنتج (${cleanSerial}) موجود مسبقاً وحالته نشط`, 409, true, "SERIAL_ALREADY_ACTIVE");
       }
     }
 
@@ -89,8 +95,20 @@ export class WarehouseTransferService {
   }
 
   async confirmReceipt(userId: string, transferId: string, itemType: string, quantity: number, packagingType: string | null) {
-    const serializedCategories = ["n950", "i9000s", "i9100", "mobilySim", "stcSim", "zainSim", "lebara", "lebaraSim"];
-    const isSerialized = serializedCategories.includes(itemType);
+    // ROOT FIX: this used to be a hardcoded, case-sensitive string list — broken
+    // twice in production: "A960" (real device) was missing from the list, and
+    // separately a Lebara SIM item type created via the admin panel with an
+    // auto-generated UUID id ("ec4bf5c0-...") could never match any hardcoded
+    // string at all. item_types.requiresSerial is the real, purpose-built,
+    // always-correct source of truth for this — query it directly instead of
+    // maintaining a parallel list that inevitably drifts out of sync with real
+    // item-type data.
+    const [itemTypeRow] = await db
+      .select({ requiresSerial: itemTypes.requiresSerial })
+      .from(itemTypes)
+      .where(eq(itemTypes.id, itemType))
+      .limit(1);
+    const isSerialized = itemTypeRow?.requiresSerial ?? false;
 
     if (isSerialized) {
       const scannedItems = await db
@@ -111,7 +129,12 @@ export class WarehouseTransferService {
       });
 
       if (recentlyScanned.length < quantity) {
-        throw new Error(`تم مسح ${recentlyScanned.length} فقط من أصل ${quantity} مطلوبة. أكمل المسح أولاً.`);
+        throw new AppError(
+          `تم مسح ${recentlyScanned.length} فقط من أصل ${quantity} مطلوبة. أكمل المسح أولاً.`,
+          400,
+          true,
+          "INCOMPLETE_SCAN"
+        );
       }
     }
 
@@ -244,7 +267,7 @@ export class WarehouseTransferService {
     const candidates = await SerialRecognitionService.buildStoredSerialCandidates(serialNumber);
 
     if (candidates.length === 0) {
-      throw new Error("الرقم التسلسلي فارغ بعد التنظيف");
+      throw new AppError("الرقم التسلسلي فارغ بعد التنظيف", 400, true, "INVALID_SERIAL");
     }
 
     const [itemResult] = await db
@@ -324,7 +347,38 @@ export class WarehouseTransferService {
     };
   }
 
-  async updateItemStatus(adminId: string, id: string, status: string, orderNumber?: string, warehouseId?: string) {
+  /**
+   * SECURITY FIX (backported from cert/db-backend-phase3-20260923 @
+   * f5ce2328): this is an administrative override that can force ANY item
+   * to any status regardless of who currently owns it. Previously the
+   * route (requireAuth only) and this method both trusted the caller
+   * implicitly -- any authenticated user, of any role, could call this
+   * against an item they did not own. The route now also requires
+   * requireAdmin, but per the "service must not assume route middleware
+   * already proved authorization" contract, this method independently
+   * re-verifies the caller's role fresh from the DB using only their id --
+   * never a role/claim passed in as a parameter, which an internal/reused
+   * call path could set incorrectly.
+   *
+   * callerId is the person who INITIATED this request (req.user.id) --
+   * never confuse this with existing.currentOwnerId, the item's own
+   * current custodian, which is a completely different concept. The two
+   * remain intentionally separate below: callerId is who is recorded as
+   * having performed the action (changedById/performedById); the
+   * "existing.currentOwnerId || callerId" passed to
+   * CustodyEngine.deliverItem/returnItem is not an authorization check --
+   * it is the concurrency-safety row-consistency check those methods
+   * already perform against their own FOR UPDATE-locked read, guarding
+   * against the row having changed between this read and that lock, not
+   * against an unauthorized caller (that boundary is enforced here,
+   * before either method is ever reached).
+   */
+  async updateItemStatus(callerId: string, id: string, status: string, orderNumber?: string, warehouseId?: string) {
+    const [caller] = await db.select().from(users).where(eq(users.id, callerId)).limit(1);
+    if (!caller || caller.role !== "admin") {
+      throw new AuthorizationError("هذا الإجراء متاح للأدمن فقط");
+    }
+
     const [existing] = await db
       .select()
       .from(items)
@@ -332,7 +386,7 @@ export class WarehouseTransferService {
       .limit(1);
 
     if (!existing) {
-      throw new Error("العنصر غير موجود");
+      throw new NotFoundError("العنصر غير موجود");
     }
 
     await db.transaction(async (tx) => {
@@ -340,16 +394,16 @@ export class WarehouseTransferService {
         await CustodyEngine.deliverItem(
           id,
           orderNumber || "CLOSED-BY-ADMIN",
-          existing.currentOwnerId || adminId,
-          adminId,
+          existing.currentOwnerId || callerId,
+          callerId,
           tx
         );
       } else if (status === "RETURNED") {
         await CustodyEngine.returnItem(
           id,
           warehouseId || existing.warehouseId || "primary-warehouse",
-          existing.currentOwnerId || adminId,
-          adminId,
+          existing.currentOwnerId || callerId,
+          callerId,
           tx
         );
       } else {
@@ -365,7 +419,7 @@ export class WarehouseTransferService {
           itemId: id,
           fromStatus: existing.status,
           toStatus: status,
-          changedById: adminId,
+          changedById: callerId,
           notes: `تغيير حالة مباشر بواسطة المشرف`,
         });
       }

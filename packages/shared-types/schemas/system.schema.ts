@@ -75,4 +75,38 @@ export type RateLimitCounter = typeof rateLimitCounters.$inferSelect;
 export type CoreJob = typeof coreJobs.$inferSelect;
 export type InsertCoreJob = z.infer<typeof insertCoreJobSchema>;
 
+// Owner Operations Center (owner.nuzum.fun) platform-wide lock state.
+//
+// RECOVERED, not authored fresh: this table already existed live in the
+// database (created 2026-07-27) from a complete original implementation
+// that was deployed once, then vanished from the git-tracked source with
+// zero trace in git history — while its DB table and old compiled dist/
+// bundles (in server backups under /root/quarantine, /root/*-backup-*)
+// survived. The full original TypeScript source (types, service, ops
+// service, auth, middleware, routes — apps/api/src/core/platform-lock/*)
+// was recovered verbatim from esbuild source maps embedded in those old
+// dist bundles and restored here rather than reinvented, since it is a
+// far more complete design (real session revocation, subscription grace
+// period, full audit trail) than a first-principles rewrite would be.
+// This schema definition matches the live table's real columns exactly
+// (confirmed via `\d platform_lock_state` against production) — it does
+// NOT create or alter anything; the table's DDL predates this file.
+export const platformLockState = pgTable("platform_lock_state", {
+  id: varchar("id").primaryKey().default("default"),
+  mode: text("mode").notNull().default("ACTIVE"),
+  publicMessage: text("public_message"),
+  internalReason: text("internal_reason"),
+  lockedAt: timestamp("locked_at"),
+  lockedBy: text("locked_by"),
+  subscriptionExpiresAt: timestamp("subscription_expires_at"),
+  gracePeriodEndsAt: timestamp("grace_period_ends_at"),
+  stopWorkers: boolean("stop_workers").notNull().default(true),
+  revokeSessions: boolean("revoke_sessions").notNull().default(true),
+  systemLockVersion: integer("system_lock_version").notNull().default(0),
+  suspendedAt: timestamp("suspended_at"),
+  reactivatedAt: timestamp("reactivated_at"),
+  suspensionReason: text("suspension_reason"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
+export type PlatformLockStateRow = typeof platformLockState.$inferSelect;

@@ -380,8 +380,14 @@ describe("PHASE B1.5 — security test foundation", () => {
           return { req, res };
         };
 
+        // ROOT FIX: MAX_REQUESTS_PER_WINDOW was raised from 150 to 300 (see
+        // security.middleware.ts — production capacity fix; the limit used
+        // to be shared per-IP across every technician behind one office/
+        // carrier NAT, confirmed causing real "Rate limit exceeded" bursts
+        // for unrelated technicians in production logs). Loop count updated
+        // to match, same "+2 over the limit" margin as before.
         let last429: any = null;
-        for (let i = 0; i < 152; i++) {
+        for (let i = 0; i < 302; i++) {
           const { req, res } = makeReqRes();
           let nextCalled = false;
           await rateLimiter(req, res, () => {

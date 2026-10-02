@@ -645,9 +645,11 @@ export default function TechnicianItemDetailsPage() {
         });
         return res.json();
       } else if (row.id.startsWith("tr-")) {
-        const res = await apiRequest("PATCH", `/api/warehouse-transfers/${rawId}`, {
+        // Note: PATCH /api/warehouse-transfers/:id/status only accepts
+        // approved|accepted|rejected — it does not support arbitrary status values.
+        const res = await apiRequest("PATCH", `/api/warehouse-transfers/${rawId}/status`, {
           status,
-          notes: adminNotes,
+          reason: adminNotes,
         });
         return res.json();
       } else {

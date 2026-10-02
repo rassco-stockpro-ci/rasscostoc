@@ -73,6 +73,11 @@ function createMockTx(opts: MockTxOptions) {
     delete: vi.fn(() => ({
       where: vi.fn(() => ({ returning: vi.fn(() => Promise.resolve(deleteReturning)) })),
     })),
+    // TEMP-SYSTEM-STABILIZATION: syncMovingInventory now acquires a
+    // transaction-scoped Postgres advisory lock (pg_advisory_xact_lock) via
+    // tx.execute(sql`...`) before its read/update — the mock tx needs this
+    // method too, or that call throws "tx.execute is not a function".
+    execute: vi.fn(() => Promise.resolve()),
     _insertValuesMock: insertValuesMock,
     _updateSetMock: updateSetMock,
   };
@@ -199,10 +204,16 @@ describe("SerializedItemsService.deleteFromTechnicianCustody (TEMPORARY FEATURE)
     );
     // The item row itself was deleted
     expect(tx.delete).toHaveBeenCalledWith(items);
-    // Balance recalculated via the official decrement path, not raw SQL
+    // Balance recalculated via the official decrement path (syncMovingInventory).
+    // TEMP-SYSTEM-STABILIZATION: the decrement is now computed as an atomic SQL
+    // expression (GREATEST(0, units + delta)) rather than a plain JS-computed
+    // literal, closing a lost-update race — so this asserts the `units` field
+    // was set at all (behavior), not the exact value shape of the computation
+    // (implementation detail covered instead by the dedicated real-Postgres
+    // concurrency test, syncMovingInventoryConcurrency.test.ts).
     expect(tx.update).toHaveBeenCalledWith(technicianMovingInventoryEntries);
     expect(tx._updateSetMock).toHaveBeenCalledWith(
-      expect.objectContaining({ units: 2 }) // 3 - 1
+      expect.objectContaining({ units: expect.anything() })
     );
   });
 

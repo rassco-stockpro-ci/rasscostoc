@@ -4,7 +4,10 @@ import { AppError, AuthorizationError, NotFoundError } from "@core/errors/AppErr
 import { z } from "zod";
 import type { SerializedItemsService } from "../../infrastructure/services/serialized-items.service";
 import { ROLES } from "@shared/roles";
-import { isTechnicianCustodyDeleteEnabled } from "../../config/technician-custody-delete.flag";
+import {
+  isTechnicianCustodyDeleteEnabled,
+  isTechnicianDeleteByIdEnabled,
+} from "../../config/technician-custody-delete.flag";
 
 const scanInSchema = z.object({
   serialNumber: z.string().trim().min(1, "الرقم التسلسلي مطلوب"),
@@ -159,6 +162,122 @@ export class SerializedItemsController {
       productPreserved: true,
       inventoryRecalculated: true,
       alreadyDeleted: result.alreadyDeleted,
+    });
+  });
+
+  /**
+   * TEMPORARY FEATURE — remove after final inventory workflow is released.
+   * DELETE /api/inventory/my-custody/serialized-items/:itemId
+   *
+   * Lets the authenticated TECHNICIAN permanently delete a single serialized
+   * item (device/SIM) they currently hold OR that they themselves delivered,
+   * identified by its own database id. Deliberately NOT admin-only, and
+   * deliberately a different route from the admin-only DELETE
+   * /api/serialized-items/:id below — that route/middleware/behavior is
+   * completely unchanged by this addition.
+   *
+   * Ownership is verified inside the service, against the database, never
+   * against anything the client claims — see technicianDeleteOwnSerializedItem's
+   * own doc comment for the exact rule. A failed ownership check surfaces here
+   * as 403 ITEM_NOT_IN_YOUR_CUSTODY (via AppError's statusCode/code), exactly
+   * like the existing deleteFromMyCustody route above.
+   */
+  technicianDeleteOwnItem = asyncHandler(async (req: Request, res: Response) => {
+    if (!isTechnicianDeleteByIdEnabled()) {
+      throw new NotFoundError("المسار غير متاح");
+    }
+
+    const user = req.user!;
+    if (user.role !== ROLES.TECHNICIAN) {
+      throw new AuthorizationError("هذه العملية متاحة للمندوب فقط");
+    }
+
+    const { itemId } = req.params;
+    if (!itemId) {
+      throw new NotFoundError("معرّف المادة مطلوب");
+    }
+
+    const reason = typeof req.body?.reason === "string" ? req.body.reason : undefined;
+
+    const result = await this.serializedItemsService.technicianDeleteOwnSerializedItem(
+      user.id,
+      user.username,
+      user.role,
+      itemId,
+      reason
+    );
+
+    res.status(200).json({
+      success: true,
+      ...result,
+    });
+  });
+
+  /**
+   * ADMIN ONLY — DELETE /api/serialized-items/:id
+   * Permanently deletes a serialized item (device/SIM) from any technician's custody
+   * by its own database id. Used by the admin technician-item-details page.
+   */
+  adminDeleteById = asyncHandler(async (req: Request, res: Response) => {
+    const user = req.user!;
+    if (user.role !== ROLES.ADMIN) {
+      throw new AuthorizationError("هذه العملية متاحة للأدمن فقط");
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      throw new NotFoundError("معرّف المادة مطلوب");
+    }
+
+    const reason = typeof req.body?.reason === "string" ? req.body.reason : undefined;
+
+    const result = await this.serializedItemsService.adminDeleteSerializedItemById(
+      user.id,
+      user.username,
+      user.role,
+      id,
+      reason
+    );
+
+    res.status(200).json({
+      success: true,
+      ...result,
+    });
+  });
+
+  /**
+   * ADMIN ONLY — PATCH /api/serialized-items/:id
+   * Correct data-entry mistakes (serial number / carrier name) on a serialized item.
+   * Status changes are intentionally rejected here — use PATCH /api/items/:id/status.
+   */
+  adminUpdateById = asyncHandler(async (req: Request, res: Response) => {
+    const user = req.user!;
+    if (user.role !== ROLES.ADMIN) {
+      throw new AuthorizationError("هذه العملية متاحة للأدمن فقط");
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      throw new NotFoundError("معرّف المادة مطلوب");
+    }
+
+    const bodySchema = z.object({
+      serialNumber: z.string().trim().min(1).optional(),
+      carrierName: z.string().trim().optional(),
+    });
+    const updates = bodySchema.parse(req.body);
+
+    const result = await this.serializedItemsService.adminUpdateSerializedItemById(
+      user.id,
+      user.username,
+      user.role,
+      id,
+      updates
+    );
+
+    res.status(200).json({
+      success: true,
+      data: result,
     });
   });
 

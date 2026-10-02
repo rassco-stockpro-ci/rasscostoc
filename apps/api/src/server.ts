@@ -36,25 +36,6 @@ async function startServer() {
     await initializeDatabase();
     readinessManager.setDBConnected(true);
 
-    // Start Outbox Worker
-    const { outboxWorker } = await import("@core/outbox/outbox.worker");
-    outboxWorker.start();
-    readinessManager.setOutboxWorkerStarted(true);
-    lifecycleCoordinator.register("outboxWorker", () => outboxWorker.stop());
-
-    // Start Asynchronous Job Worker
-    const { jobsWorker } = await import("@core/jobs/jobs.worker");
-    jobsWorker.start();
-    readinessManager.setJobsWorkerStarted(true);
-    lifecycleCoordinator.register("jobsWorker", () => jobsWorker.stop());
-
-    // OPS-REMED-E4-P2: Start Courier Projection Worker — same in-process
-    // lifecycle pattern as outboxWorker/jobsWorker above.
-    const { courierProjectionWorker } = await import("@modules/courier/infrastructure/jobs/CourierProjectionWorker");
-    courierProjectionWorker.start();
-    readinessManager.setCourierProjectionWorkerStarted(true);
-    lifecycleCoordinator.register("courierProjectionWorker", () => courierProjectionWorker.stop());
-
     lifecycleCoordinator.register("sessionStore", () => closeSessionStore());
     lifecycleCoordinator.register("databasePool", () => closeDatabase());
 
@@ -88,6 +69,59 @@ async function startServer() {
       }
     }
 
+    // Per-deployment lock: load state before workers (fail-closed if unreadable).
+    // See apps/api/src/core/platform-lock/platform-lock.service.ts — this was a
+    // fully-built original feature recovered from esbuild source maps embedded
+    // in old server backups after its source vanished from git with no trace;
+    // restored verbatim rather than reinvented.
+    const { platformLockService } = await import("@core/platform-lock/platform-lock.service");
+    const { outboxWorker } = await import("@core/outbox/outbox.worker");
+    const { jobsWorker } = await import("@core/jobs/jobs.worker");
+
+    platformLockService.setWorkerController({
+      start: () => {
+        outboxWorker.start();
+        jobsWorker.start();
+        readinessManager.setOutboxWorkerStarted(true);
+        readinessManager.setJobsWorkerStarted(true);
+      },
+      stop: () => {
+        jobsWorker.stop();
+        outboxWorker.stop();
+      },
+    });
+    lifecycleCoordinator.register("outboxWorker", () => outboxWorker.stop());
+    lifecycleCoordinator.register("jobsWorker", () => jobsWorker.stop());
+
+    const lockState = await platformLockService.initialize();
+    log(`Platform lock mode: ${lockState.mode} (source=${lockState.source}, slv=${lockState.systemLockVersion})`);
+
+    const { platformOpsService } = await import("@core/platform-lock/platform-lock.ops.service");
+    platformOpsService.start();
+    platformOpsService.pushLive("API Started");
+
+    if (lockState.mode === "ACTIVE" || !lockState.stopWorkers) {
+      outboxWorker.start();
+      jobsWorker.start();
+      readinessManager.setOutboxWorkerStarted(true);
+      readinessManager.setJobsWorkerStarted(true);
+    } else {
+      log("Workers not started — platform lock stop_workers is active");
+      readinessManager.setOutboxWorkerStarted(false);
+      readinessManager.setJobsWorkerStarted(false);
+    }
+
+    // OPS-REMED-E4-P2: Courier Projection Worker follows the same
+    // production platform-lock gate as the core background workers.
+    const { courierProjectionWorker } = await import("@modules/courier/infrastructure/jobs/CourierProjectionWorker");
+    if (lockState.mode === "ACTIVE" || !lockState.stopWorkers) {
+      courierProjectionWorker.start();
+      readinessManager.setCourierProjectionWorkerStarted(true);
+      lifecycleCoordinator.register("courierProjectionWorker", () => courierProjectionWorker.stop());
+    } else {
+      log("Courier Projection Worker not started — platform lock stop_workers is active");
+      readinessManager.setCourierProjectionWorkerStarted(false);
+    }
 
     // 3. Register route modules
     const server = await registerRoutes(app);

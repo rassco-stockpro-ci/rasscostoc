@@ -8,8 +8,8 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const [username, setUsername] = useState('eissa11');
-  const [password, setPassword] = useState('Aa112233');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,7 +39,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
       {/* Main RASSCO Enterprise White Card */}
       <div className="w-full max-w-md bg-white rounded-3xl p-8 sm:p-10 relative z-10 border border-slate-200 shadow-xl">
-        
+
         {/* Official RASSCO Logo Header */}
         <div className="flex flex-col items-center text-center mb-8">
           <RasscoLogo size="xl" subtitle="بوابة الفنيين والمشرفين — تسجيل الدخول" lightMode={true} />

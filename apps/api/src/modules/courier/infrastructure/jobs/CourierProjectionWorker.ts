@@ -87,9 +87,24 @@ async function projectDeductionCompletion(
       );
     }
 
+    // RECONCILIATION_REQUIRED is included here deliberately: this function
+    // is only ever reached for a row that runOnce() claimed from
+    // inventory_deduction_completions, i.e. one with real, durable,
+    // transactionally-atomic completion evidence already recorded
+    // (inventory.engine.ts writes that row as the LAST statement of the
+    // deduction transaction — it cannot exist for a partial/failed
+    // deduction). RECONCILIATION_REQUIRED rows written with NO such
+    // evidence (e.g. the historical bulk-import path in
+    // courier.service.ts's importRawRequests) are never claimed by
+    // runOnce() in the first place, so they can never reach this CAS
+    // regardless of what is in this array — the evidence gate lives in
+    // the discovery query, not here. This closes the one real gap: a
+    // request whose deduction genuinely succeeded (e.g. via a retry) after
+    // its execution had already been marked RECONCILIATION_REQUIRED could
+    // previously never converge to CLOSED_SUCCESS.
     const updated = await drizzleCourierRepository.updateCustodyClosureStatus(
       requestId,
-      ["PROCESSING", "FAILED_RETRYABLE", "FAILED_FINAL"],
+      ["PROCESSING", "FAILED_RETRYABLE", "FAILED_FINAL", "RECONCILIATION_REQUIRED"],
       "CLOSED_SUCCESS",
       tx
     );

@@ -4,8 +4,11 @@
 
 import type { Request, Response } from "express";
 import { asyncHandler } from "@core/errors/errorHandler";
-import { NotFoundError } from "@core/errors/AppError";
+import { AppError, NotFoundError, AuthorizationError } from "@core/errors/AppError";
+import { systemLogs } from "@shared/schema";
+import { getDatabase } from "@core/database/connection";
 import { z } from "zod";
+import { technicianDeactivationGuardService } from "@modules/inventory/infrastructure/services/technician-deactivation-guard.service";
 import {
   WithdrawToWarehouseUseCaseError,
 } from "@modules/inventory/application/inventory/use-cases/WithdrawTechnicianInventoryToWarehouse.use-case";
@@ -27,7 +30,51 @@ const withdrawTechnicianInventoryToWarehouseUseCase =
 const getTechnicianMovingInventoryUseCase =
   createGetTechnicianMovingInventoryUseCase();
 
+/**
+ * SECURITY FIX — raw user rows (from userManagementUseCase) include the password
+ * hash and other internal fields with no built-in filtering; this controller was
+ * returning them to the client as-is (getAll/getById, and the new update/delete
+ * below). Mirrors the same minimal view users.controller.ts already uses for the
+ * equivalent /api/users endpoints.
+ */
+export function toMinimalTechnicianView(user: any) {
+  let extraProfile = null;
+  if (user.permissions) {
+    try {
+      extraProfile = typeof user.permissions === "string" ? JSON.parse(user.permissions) : user.permissions;
+    } catch {
+      extraProfile = null;
+    }
+  }
+
+  return {
+    id: user.id,
+    username: user.username,
+    fullName: user.fullName,
+    profileImage: user.profileImage ?? null,
+    role: user.role,
+    regionId: user.regionId ?? null,
+    employeeCode: user.employeeCode ?? null,
+    technicianCode: user.technicianCode ?? null,
+    isActive: user.isActive,
+    city: user.city ?? null,
+    email: user.email ?? null,
+    telegramUserId: user.telegramUserId ?? null,
+    extraProfile,
+    createdAt: user.createdAt ?? null,
+    updatedAt: user.updatedAt ?? null,
+  };
+}
+
 export class TechniciansController {
+  private async logActivity(log: typeof systemLogs.$inferInsert) {
+    try {
+      await getDatabase().insert(systemLogs).values(log);
+    } catch (error) {
+      console.error("Failed to write system audit log:", error);
+    }
+  }
+
   /**
    * GET /api/technicians
    * Get all technicians
@@ -55,7 +102,7 @@ export class TechniciansController {
       technicians = users.filter((u) => u.role === "technician");
     }
 
-    res.json(technicians);
+    res.json(technicians.map(toMinimalTechnicianView));
   });
 
   /**
@@ -77,7 +124,7 @@ export class TechniciansController {
       (assignedUser: any) => assignedUser?.role === "technician",
     );
 
-    res.json(technicians);
+    res.json(technicians.map(toMinimalTechnicianView));
   });
 
   /**
@@ -89,7 +136,137 @@ export class TechniciansController {
     if (!technician) {
       throw new NotFoundError("Technician not found");
     }
-    res.json(technician);
+    res.json(toMinimalTechnicianView(technician));
+  });
+
+  /** Admin: any technician. Supervisor: only technicians assigned to them. */
+  private async assertCanManageTechnician(req: Request, technicianId: string): Promise<void> {
+    const user = req.user!;
+    if (user.role === "admin") return;
+
+    if (user.role === "supervisor") {
+      const assignedIds =
+        await supervisorAssignmentsContainer.supervisorAssignmentsUseCase.getTechnicianIdsBySupervisor(
+          user.id,
+        );
+      if (assignedIds.includes(technicianId)) return;
+    }
+
+    throw new AuthorizationError("غير مصرح لك بإدارة بيانات هذا الفني");
+  }
+
+  /**
+   * PATCH /api/technicians/:id
+   * Update a technician's profile. Technicians are users with role="technician" —
+   * this delegates to the same user-management use case as PATCH /api/users/:id,
+   * but scoped to admin (any technician) or supervisor (only assigned technicians).
+   */
+  update = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const existing = await usersContainer.userManagementUseCase.findById(id);
+    if (!existing || existing.role !== "technician") {
+      throw new NotFoundError("Technician not found");
+    }
+
+    await this.assertCanManageTechnician(req, id);
+
+    // ROOT FIX (TEMP-SYSTEM-STABILIZATION) — explicit allowlist DTO instead of passing
+    // insertUserSchema.partial() through broadly. Only profile fields a technician edit
+    // screen has any business editing. password/role/permissions/isActive and any other
+    // administrative or authentication field can NEVER be touched via this endpoint,
+    // regardless of what the request body contains.
+    const updateTechnicianSchema = z.object({
+      fullName: z.string().trim().min(1).optional(),
+      email: z.string().trim().email().optional(),
+      city: z.string().trim().optional(),
+      employeeCode: z.string().trim().optional(),
+      technicianCode: z.string().trim().optional(),
+      department: z.string().trim().optional(),
+      regionId: z.string().trim().optional(),
+      profileImage: z.string().optional(),
+    });
+    const updates = updateTechnicianSchema.parse(req.body);
+
+    const actor = req.user!;
+    const updatedUser = await usersContainer.userManagementUseCase.update(id, updates, {
+      id: actor.id,
+      username: actor.username,
+      role: actor.role,
+    });
+
+    await this.logActivity({
+      userId: actor.id,
+      userName: actor.username,
+      userRole: actor.role,
+      regionId: null,
+      action: "update",
+      entityType: "technician",
+      entityId: id,
+      entityName: updatedUser.fullName,
+      description: `تم تحديث بيانات الفني: ${updatedUser.fullName}`,
+      // Never log raw user/technician entities — they carry the password hash.
+      // Only the already-sanitized "before" view and the explicit update payload
+      // (which the allowlist schema above already guarantees excludes password/role).
+      details: JSON.stringify({ before: toMinimalTechnicianView(existing), after: updates }),
+      severity: "info",
+      success: true,
+    });
+
+    res.json(toMinimalTechnicianView(updatedUser));
+  });
+
+  /**
+   * DELETE /api/technicians/:id
+   * Delete a technician (soft delete, same as DELETE /api/users/:id), scoped to
+   * admin (any technician) or supervisor (only assigned technicians).
+   */
+  delete = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const existing = await usersContainer.userManagementUseCase.findById(id);
+    if (!existing || existing.role !== "technician") {
+      throw new NotFoundError("Technician not found");
+    }
+
+    await this.assertCanManageTechnician(req, id);
+
+    const blockers = await technicianDeactivationGuardService.findActiveOperationBlockers(id);
+    if (blockers.length > 0) {
+      throw new AppError(
+        `لا يمكن تعطيل هذا الفني حاليًا: ${blockers.join("، ")}`,
+        409,
+        true,
+        "TECHNICIAN_HAS_ACTIVE_OPERATIONS"
+      );
+    }
+
+    const deleted = await usersContainer.userManagementUseCase.softDelete(id, {
+      id: req.user!.id,
+      username: req.user!.username,
+      role: req.user!.role,
+    });
+    if (!deleted) {
+      throw new NotFoundError("Technician not found");
+    }
+
+    const actor = req.user!;
+    await this.logActivity({
+      userId: actor.id,
+      userName: actor.username,
+      userRole: actor.role,
+      regionId: null,
+      action: "deactivate",
+      entityType: "technician",
+      entityId: id,
+      entityName: existing.fullName,
+      description: `تم تعطيل الفني: ${existing.fullName} (soft delete — isActive=false)`,
+      details: JSON.stringify({ before: toMinimalTechnicianView(existing) }),
+      severity: "warn",
+      success: true,
+    });
+
+    res.json({ message: "Technician deleted successfully" });
   });
 
   /**

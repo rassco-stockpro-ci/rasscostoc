@@ -19,6 +19,27 @@ if (configService.trustProxy || configService.isProduction) {
   app.set('trust proxy', true);
 }
 
+// ROOT FIX: this is a dynamic API — every /api/* response reflects live DB state
+// and must never be cached or served as a stale "304 Not Modified" by the browser.
+// Express generates a weak ETag by default on every res.json()/res.send(), which
+// enables the browser to send conditional GETs and receive 304s referencing an
+// old cached body — confirmed live in production for GET /api/warehouse-transfers,
+// where a technician's browser kept showing a transfer's pre-scan status well
+// after the transfer had actually been confirmed server-side. Disabling ETag
+// generation and forcing Cache-Control: no-store on every /api/* response closes
+// this at the source, rather than relying on every client-side fetch() call to
+// remember to opt out of the browser cache (which is easy to miss and was in
+// fact still happening even after doing exactly that on the frontend).
+app.set('etag', false);
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 // 1. Enable Correlation and Tracing context
 app.use(correlationMiddleware);
 
@@ -44,7 +65,7 @@ app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Requested-With, X-Idempotency-Key, X-Correlation-ID, X-Trace-ID",
+    "Content-Type, Authorization, X-Requested-With, X-Idempotency-Key, X-Correlation-ID, X-Trace-ID, X-Platform-Owner-Key, X-Platform-Owner-Password, X-Internal-Service-Key",
   );
 
   if (req.method === "OPTIONS") {

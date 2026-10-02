@@ -132,6 +132,28 @@ const DB_DEPENDENT_TEST_FILES = [
   // for GET /api/users/:id and the supervisor assignment read endpoints —
   // needs the real app, real routes, and a real authenticated request chain.
   "apps/api/src/core/tests/security/object-level-authorization.test.ts",
+  // TEMP-SYSTEM-STABILIZATION — real disposable-Postgres regression tests
+  // added during the temp-hosting stabilization work; same DB-dependent
+  // category as the files above.
+  "apps/api/src/modules/inventory/infrastructure/services/syncMovingInventoryConcurrency.test.ts",
+  "apps/api/src/modules/inventory/__integration__/technicians.controller.stabilization.test.ts",
+  "apps/api/src/modules/inventory/infrastructure/system/use-cases/ExportSystemBackup.stabilization.test.ts",
+  "apps/api/src/modules/inventory/infrastructure/services/serialized-items.service.technician-delete-by-id.integration.test.ts",
+  // Backported from cert/db-backend-phase3-20260923 — D5 double-return
+  // concurrency fix (2758a42e), broken-access-control fix on
+  // PATCH /api/items/:id/status (f5ce2328), and inventory-scan
+  // idempotency + balance concurrency fix (c839c3e1). All require a real
+  // Postgres instance; cannot be proven against a mocked repository.
+  "apps/api/src/modules/inventory/infrastructure/services/custody-engine.returnItem.concurrency.test.ts",
+  // BLOCKER #1 fix (release-candidate/custody-20260924, f7d38b27): same
+  // reason as returnItem's concurrency test above -- real Postgres only.
+  "apps/api/src/modules/inventory/infrastructure/services/custody-engine.deliverItem.concurrency.test.ts",
+  "apps/api/src/modules/inventory/infrastructure/services/warehouse-transfer.updateItemStatus.authorization.test.ts",
+  "apps/api/src/core/tests/security/items-status-authorization.routes.test.ts",
+  "apps/api/src/modules/inventory/infrastructure/services/inventory-scan.idempotency-concurrency.test.ts",
+  "apps/api/src/core/tests/concurrency/inventory-scan.idempotency-http.test.ts",
+  // Production parity: case-insensitive username lookup is SQL (real Postgres).
+  "apps/api/src/modules/identity/infrastructure/database/DrizzleUserRepository.username-lookup.test.ts",
 ];
 
 const args = [

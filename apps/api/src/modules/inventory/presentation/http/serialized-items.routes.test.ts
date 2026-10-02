@@ -12,6 +12,13 @@ vi.mock("@core/middlewares/auth.middleware", () => {
       req.user = { id: "test-tech-id-123", username: "testtech", role: "technician" };
       next();
     },
+    // TEMP-SYSTEM-STABILIZATION: added when PATCH/DELETE /api/serialized-items/:id
+    // (admin-only routes) were introduced — route registration itself needs this
+    // export to exist, even though no test in this file exercises those routes.
+    requireAdmin: (req: any, res: any, next: any) => {
+      if (req.user?.role === "admin") return next();
+      return res.status(403).json({ success: false, message: "Admin access required" });
+    },
   };
 });
 
@@ -21,6 +28,7 @@ vi.mock("@modules/inventory/infrastructure/services/serialized-items.service", (
   const scanOutMock = vi.fn();
   const lookupMock = vi.fn();
   const deleteFromTechnicianCustodyMock = vi.fn();
+  const technicianDeleteOwnSerializedItemMock = vi.fn();
 
   return {
     SerializedItemsService: class {
@@ -28,20 +36,28 @@ vi.mock("@modules/inventory/infrastructure/services/serialized-items.service", (
       scanOut = scanOutMock;
       lookup = lookupMock;
       deleteFromTechnicianCustody = deleteFromTechnicianCustodyMock;
+      technicianDeleteOwnSerializedItem = technicianDeleteOwnSerializedItemMock;
     },
     serializedItemsService: {
       scanIn: scanInMock,
       scanOut: scanOutMock,
       lookup: lookupMock,
       deleteFromTechnicianCustody: deleteFromTechnicianCustodyMock,
+      technicianDeleteOwnSerializedItem: technicianDeleteOwnSerializedItemMock,
     }
   };
 });
 
 // TEMPORARY FEATURE — remove or disable after final customer handover.
 const isTechnicianCustodyDeleteEnabledMock = vi.fn(() => true);
+// TEMPORARY FEATURE — remove after final inventory workflow is released.
+// Independent flag/mock — deliberately defaults to true only inside this test file so
+// existing behavior-under-test is exercised; production defaults to disabled (see
+// isTechnicianDeleteByIdEnabled's own doc comment).
+const isTechnicianDeleteByIdEnabledMock = vi.fn(() => true);
 vi.mock("../../config/technician-custody-delete.flag", () => ({
   isTechnicianCustodyDeleteEnabled: () => isTechnicianCustodyDeleteEnabledMock(),
+  isTechnicianDeleteByIdEnabled: () => isTechnicianDeleteByIdEnabledMock(),
 }));
 
 describe("Serialized Items HTTP Integration Tests", () => {
@@ -370,6 +386,130 @@ describe("Serialized Items HTTP Integration Tests", () => {
     });
 
     it("returns 404 and never calls the service when the feature flag is disabled", async () => {
+      isTechnicianCustodyDeleteEnabledMock.mockReturnValue(false);
+
+      await request(app)
+        .delete("/api/inventory/my-custody/items/DEVICE/SN-DEVICE-777")
+        .send({ confirmation: "SN-DEVICE-777" })
+        .expect(404);
+
+      expect(mockSerializedItemsService.deleteFromTechnicianCustody).not.toHaveBeenCalled();
+    });
+  });
+
+  // TEMPORARY FEATURE — remove after final inventory workflow is released.
+  describe("DELETE /api/inventory/my-custody/serialized-items/:itemId", () => {
+    beforeEach(() => {
+      isTechnicianDeleteByIdEnabledMock.mockReturnValue(true);
+    });
+
+    it("deletes an item by its database id from the authenticated technician's own custody and returns 200", async () => {
+      vi.mocked(mockSerializedItemsService.technicianDeleteOwnSerializedItem).mockResolvedValue({
+        itemId: "item-uuid-111",
+        serialNumber: "SN-DEVICE-777",
+        deleted: true,
+      } as any);
+
+      const res = await request(app)
+        .delete("/api/inventory/my-custody/serialized-items/item-uuid-111")
+        .send({})
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        success: true,
+        itemId: "item-uuid-111",
+        serialNumber: "SN-DEVICE-777",
+        deleted: true,
+      });
+
+      // Identity comes only from the mocked req.user set by requireAuth above —
+      // never from the request body.
+      expect(mockSerializedItemsService.technicianDeleteOwnSerializedItem).toHaveBeenCalledWith(
+        "test-tech-id-123",
+        "testtech",
+        "technician",
+        "item-uuid-111",
+        undefined
+      );
+    });
+
+    it("ignores a technicianId supplied in the request body — identity comes only from req.user", async () => {
+      vi.mocked(mockSerializedItemsService.technicianDeleteOwnSerializedItem).mockResolvedValue({
+        itemId: "item-uuid-111",
+        serialNumber: "SN-DEVICE-777",
+        deleted: true,
+      } as any);
+
+      await request(app)
+        .delete("/api/inventory/my-custody/serialized-items/item-uuid-111")
+        .send({ technicianId: "attacker-controlled-id", ownerId: "attacker-controlled-id" })
+        .expect(200);
+
+      expect(mockSerializedItemsService.technicianDeleteOwnSerializedItem).toHaveBeenCalledWith(
+        "test-tech-id-123", // from req.user, not from the body
+        "testtech",
+        "technician",
+        "item-uuid-111",
+        undefined
+      );
+    });
+
+    it("propagates 403 ITEM_NOT_IN_YOUR_CUSTODY from the service", async () => {
+      const { AppError } = await import("@core/errors/AppError");
+      vi.mocked(mockSerializedItemsService.technicianDeleteOwnSerializedItem).mockRejectedValue(
+        new AppError("لا يمكنك حذف عنصر غير موجود في عهدتك", 403, true, "ITEM_NOT_IN_YOUR_CUSTODY")
+      );
+
+      const res = await request(app)
+        .delete("/api/inventory/my-custody/serialized-items/item-uuid-111")
+        .send({})
+        .expect(403);
+
+      expect(res.body).toMatchObject({ success: false, code: "ITEM_NOT_IN_YOUR_CUSTODY" });
+    });
+
+    it("propagates 409 ITEM_HAS_ACTIVE_RELATIONS from the service", async () => {
+      const { AppError } = await import("@core/errors/AppError");
+      vi.mocked(mockSerializedItemsService.technicianDeleteOwnSerializedItem).mockRejectedValue(
+        new AppError("لا يمكن حذف العنصر لارتباطه بعملية نشطة", 409, true, "ITEM_HAS_ACTIVE_RELATIONS")
+      );
+
+      const res = await request(app)
+        .delete("/api/inventory/my-custody/serialized-items/item-uuid-111")
+        .send({})
+        .expect(409);
+
+      expect(res.body).toMatchObject({ success: false, code: "ITEM_HAS_ACTIVE_RELATIONS" });
+    });
+
+    it("propagates 404 for a nonexistent item id", async () => {
+      const { NotFoundError } = await import("@core/errors/AppError");
+      vi.mocked(mockSerializedItemsService.technicianDeleteOwnSerializedItem).mockRejectedValue(
+        new NotFoundError("العنصر غير موجود")
+      );
+
+      await request(app)
+        .delete("/api/inventory/my-custody/serialized-items/nonexistent-id")
+        .send({})
+        .expect(404);
+    });
+
+    it("returns 404 and never calls the service when this route's OWN flag is disabled — independently of the DEVICE/SIM+serial route's flag", async () => {
+      isTechnicianDeleteByIdEnabledMock.mockReturnValue(false);
+      // The OTHER temporary-delete route's flag is left enabled here on purpose, to
+      // prove the two flags are genuinely independent in both directions.
+      isTechnicianCustodyDeleteEnabledMock.mockReturnValue(true);
+
+      await request(app)
+        .delete("/api/inventory/my-custody/serialized-items/item-uuid-111")
+        .send({})
+        .expect(404);
+
+      expect(mockSerializedItemsService.technicianDeleteOwnSerializedItem).not.toHaveBeenCalled();
+    });
+
+    it("this route's flag being enabled does not enable the OTHER route when ITS flag is disabled", async () => {
+      isTechnicianDeleteByIdEnabledMock.mockReturnValue(true);
       isTechnicianCustodyDeleteEnabledMock.mockReturnValue(false);
 
       await request(app)
