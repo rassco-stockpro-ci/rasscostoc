@@ -25,7 +25,12 @@ cleanup() { rm -rf "$TMP_DIST"; }
 trap cleanup EXIT
 
 CURRENT_SHA="$(git rev-parse HEAD)"
-OLD_SHA="$(git rev-parse HEAD~1 2>/dev/null || echo "0000000000000000000000000000000000000000")"
+# Any well-formed SHA other than HEAD. HEAD~1 when history exists; in a
+# shallow checkout (CI, fetch-depth 1) `git rev-parse HEAD~1` prints the
+# literal "HEAD~1" to stdout before failing, which used to be concatenated
+# with the fallback -- --verify --quiet prints nothing on failure.
+OLD_SHA="$(git rev-parse --verify --quiet HEAD~1 || true)"
+[ -n "$OLD_SHA" ] || OLD_SHA="0000000000000000000000000000000000000000"
 
 fail_case() {
   echo "FAIL: $1" >&2
