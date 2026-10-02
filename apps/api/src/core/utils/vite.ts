@@ -39,6 +39,18 @@ export async function setupVite(app: Express, server: Server) {
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
+    // ROOT FIX (TEMP-SYSTEM-STABILIZATION): an unmatched /api/* request must never
+    // fall through to the SPA HTML shell — that silently masks missing/broken API
+    // routes as a fake "200 text/html" success to the frontend. Any /api/* request
+    // that reaches this wildcard means no route matched it; answer with a real JSON
+    // 404 instead.
+    if (url.startsWith("/api/")) {
+      return res.status(404).json({
+        success: false,
+        message: "API endpoint not found",
+      });
+    }
+
     try {
       const clientTemplate = path.resolve(
         import.meta.dirname,

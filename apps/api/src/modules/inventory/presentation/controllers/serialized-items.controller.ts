@@ -163,6 +163,74 @@ export class SerializedItemsController {
   });
 
   /**
+   * ADMIN ONLY — DELETE /api/serialized-items/:id
+   * Permanently deletes a serialized item (device/SIM) from any technician's custody
+   * by its own database id. Used by the admin technician-item-details page.
+   */
+  adminDeleteById = asyncHandler(async (req: Request, res: Response) => {
+    const user = req.user!;
+    if (user.role !== ROLES.ADMIN) {
+      throw new AuthorizationError("هذه العملية متاحة للأدمن فقط");
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      throw new NotFoundError("معرّف المادة مطلوب");
+    }
+
+    const reason = typeof req.body?.reason === "string" ? req.body.reason : undefined;
+
+    const result = await this.serializedItemsService.adminDeleteSerializedItemById(
+      user.id,
+      user.username,
+      user.role,
+      id,
+      reason
+    );
+
+    res.status(200).json({
+      success: true,
+      ...result,
+    });
+  });
+
+  /**
+   * ADMIN ONLY — PATCH /api/serialized-items/:id
+   * Correct data-entry mistakes (serial number / carrier name) on a serialized item.
+   * Status changes are intentionally rejected here — use PATCH /api/items/:id/status.
+   */
+  adminUpdateById = asyncHandler(async (req: Request, res: Response) => {
+    const user = req.user!;
+    if (user.role !== ROLES.ADMIN) {
+      throw new AuthorizationError("هذه العملية متاحة للأدمن فقط");
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      throw new NotFoundError("معرّف المادة مطلوب");
+    }
+
+    const bodySchema = z.object({
+      serialNumber: z.string().trim().min(1).optional(),
+      carrierName: z.string().trim().optional(),
+    });
+    const updates = bodySchema.parse(req.body);
+
+    const result = await this.serializedItemsService.adminUpdateSerializedItemById(
+      user.id,
+      user.username,
+      user.role,
+      id,
+      updates
+    );
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  });
+
+  /**
    * GET /api/serialized-items/lookup/:serialNumber
    * Retrieve item status, metadata, and history
    */

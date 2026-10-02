@@ -12,6 +12,13 @@ vi.mock("@core/middlewares/auth.middleware", () => {
       req.user = { id: "test-tech-id-123", username: "testtech", role: "technician" };
       next();
     },
+    // TEMP-SYSTEM-STABILIZATION: added when PATCH/DELETE /api/serialized-items/:id
+    // (admin-only routes) were introduced — route registration itself needs this
+    // export to exist, even though no test in this file exercises those routes.
+    requireAdmin: (req: any, res: any, next: any) => {
+      if (req.user?.role === "admin") return next();
+      return res.status(403).json({ success: false, message: "Admin access required" });
+    },
   };
 });
 

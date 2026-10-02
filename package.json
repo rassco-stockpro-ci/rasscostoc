@@ -39,6 +39,7 @@
     "db:item-types:constraints": "tsx scripts/apply-item-types-constraints.ts",
     "ops-perm:s2:backfill": "tsx scripts/ops-perm-s2-backfill-supervisor-grants.ts",
     "smoke:api": "node scripts/smoke-api.cjs",
+    "smoke:temp": "node scripts/smoke-temp-stabilization.mjs",
     "smoke:erp003": "node scripts/erp003-postdeploy-verify.mjs",
     "prepare": "husky",
     "ops": "node scripts/ops/run.mjs"

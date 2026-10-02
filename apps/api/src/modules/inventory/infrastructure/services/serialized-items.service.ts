@@ -16,11 +16,28 @@ const CUSTODY_DELETE_ITEM_TYPE_TO_CATEGORY: Record<string, string> = {
 };
 
 export class SerializedItemsService {
+  /**
+   * ROOT FIX (TEMP-SYSTEM-STABILIZATION) — this was a read → JS arithmetic → write
+   * with no row lock, on a table with NO unique constraint on (technicianId,
+   * itemTypeId). Two concurrent deletes/scans for the same technician+itemType could
+   * either lose an update (both read the same starting value) or create duplicate
+   * rows (both see "no existing entry" and both insert). Fixed with a transaction-
+   * scoped Postgres advisory lock keyed on (technicianId, itemTypeId) — it fully
+   * serializes concurrent callers for that exact pair without requiring a schema
+   * migration (this table has no such duplicate data), and auto-releases on
+   * commit/rollback. The increment itself is also done as atomic SQL arithmetic
+   * rather than JS, so the row's own value can never be read twice.
+   */
   private async syncMovingInventory(tx: any, technicianId: string, itemTypeId: string, delta: number) {
     if (!technicianId || !itemTypeId || delta === 0) return;
 
+    // Serialize all concurrent callers for this exact (technicianId, itemTypeId) pair.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${technicianId} || ':' || ${itemTypeId}))`
+    );
+
     const [existingEntry] = await tx
-      .select()
+      .select({ id: technicianMovingInventoryEntries.id })
       .from(technicianMovingInventoryEntries)
       .where(
         and(
@@ -31,11 +48,10 @@ export class SerializedItemsService {
       .limit(1);
 
     if (existingEntry) {
-      const newUnits = Math.max(0, existingEntry.units + delta);
       await tx
         .update(technicianMovingInventoryEntries)
         .set({
-          units: newUnits,
+          units: sql`GREATEST(0, ${technicianMovingInventoryEntries.units} + ${delta})`,
           updatedAt: new Date(),
         })
         .where(eq(technicianMovingInventoryEntries.id, existingEntry.id));
@@ -545,6 +561,208 @@ export class SerializedItemsService {
         deleted: true,
         alreadyDeleted: false,
       };
+    });
+  }
+
+  /**
+   * ADMIN hard delete of a serialized item by its own database id — used by the
+   * technician-item-details admin page. Unlike deleteFromTechnicianCustody, this is
+   * not restricted to the caller's own custody (an admin may delete any technician's
+   * item), takes the row's real id directly (no serial-recognition ambiguity), and the
+   * confirmation UX is the caller's own AlertDialog rather than a retyped serial.
+   * Carries the same safeguards: active-courier-relation guard, audit-first, cascade
+   * delete, and official moving-inventory resync.
+   */
+  async adminDeleteSerializedItemById(
+    adminId: string,
+    adminUsername: string,
+    adminRole: string,
+    itemId: string,
+    reason?: string
+  ) {
+    const auditReason = (reason || "").trim() || "admin_hard_delete";
+
+    return await db.transaction(async (tx: any) => {
+      const [item] = await tx
+        .select()
+        .from(items)
+        .where(eq(items.id, itemId))
+        .for("update");
+
+      if (!item) {
+        throw new NotFoundError("العنصر غير موجود");
+      }
+
+      const [itemTypeRow] = await tx
+        .select({ nameAr: itemTypes.nameAr, nameEn: itemTypes.nameEn, category: itemTypes.category })
+        .from(itemTypes)
+        .where(eq(itemTypes.id, item.itemTypeId))
+        .limit(1);
+
+      const candidates = await SerialRecognitionService.buildStoredSerialCandidates(
+        item.serialNumber,
+        undefined,
+        tx
+      );
+
+      const linkedCourierRows = candidates.length
+        ? await tx
+            .select({ status: courierRequestItems.status })
+            .from(courierRequestItems)
+            .where(inArray(courierRequestItems.serialNumber, candidates))
+        : [];
+
+      const hasActiveCourierRequest = linkedCourierRows.some(
+        (row: any) => !TERMINAL_COURIER_REQUEST_STATUSES.includes(row.status)
+      );
+
+      if (hasActiveCourierRequest) {
+        throw new AppError(
+          "لا يمكن حذف العنصر لارتباطه بعملية نشطة",
+          409,
+          true,
+          "ITEM_HAS_ACTIVE_RELATIONS"
+        );
+      }
+
+      await tx.insert(systemLogs).values({
+        userId: adminId,
+        userName: adminUsername,
+        userRole: adminRole,
+        action: "admin_delete_serialized_item",
+        entityType: "item",
+        entityId: item.id,
+        entityName: item.serialNumber,
+        details: JSON.stringify({
+          itemId: item.id,
+          serialNumber: item.serialNumber,
+          itemTypeId: item.itemTypeId,
+          itemTypeNameAr: itemTypeRow?.nameAr,
+          itemTypeNameEn: itemTypeRow?.nameEn,
+          category: itemTypeRow?.category,
+          previousStatus: item.status,
+          previousOwnerId: item.currentOwnerId,
+          warehouseId: item.warehouseId,
+          reason: auditReason,
+          affectedTables: [
+            "items",
+            "inventory_transactions",
+            "item_history_logs",
+            "custody_movements",
+            "technician_moving_inventory_entries",
+          ],
+        }),
+        description: `حذف الأدمن ${itemTypeRow?.category === "sim" ? "الشريحة" : "الجهاز"} ${item.serialNumber} نهائيًا من عهدة الفني`,
+        severity: "warn",
+        success: true,
+      });
+
+      const deletedRows = await tx.delete(items).where(eq(items.id, item.id)).returning();
+      if (!deletedRows || deletedRows.length === 0) {
+        throw new Error("فشل حذف العنصر");
+      }
+
+      if (item.currentOwnerId && isActiveCustodyStatus(item.status)) {
+        await this.syncMovingInventory(tx, item.currentOwnerId, item.itemTypeId, -1);
+      }
+
+      return {
+        itemId: item.id,
+        serialNumber: item.serialNumber,
+        deleted: true,
+      };
+    });
+  }
+
+  /**
+   * ADMIN ONLY — correct data-entry mistakes (serial number typo, carrier name) on an
+   * existing serialized item. Deliberately does NOT accept a status change — lifecycle
+   * transitions must go through PATCH /api/items/:id/status (CustodyEngine), which keeps
+   * custody_movements / item_history_logs invariants correct; this endpoint is scoped to
+   * plain field corrections only.
+   */
+  async adminUpdateSerializedItemById(
+    adminId: string,
+    adminUsername: string,
+    adminRole: string,
+    itemId: string,
+    updates: { serialNumber?: string; carrierName?: string }
+  ) {
+    const newSerial = updates.serialNumber?.trim();
+    const newCarrier = updates.carrierName?.trim();
+
+    if (!newSerial && newCarrier === undefined) {
+      throw new AppError("لا توجد بيانات لتحديثها", 400, true, "NO_UPDATES");
+    }
+
+    return await db.transaction(async (tx: any) => {
+      const [item] = await tx
+        .select()
+        .from(items)
+        .where(eq(items.id, itemId))
+        .for("update");
+
+      if (!item) {
+        throw new NotFoundError("العنصر غير موجود");
+      }
+
+      if (newSerial && newSerial !== item.serialNumber) {
+        const [conflict] = await tx
+          .select({ id: items.id })
+          .from(items)
+          .where(eq(items.serialNumber, newSerial))
+          .limit(1);
+        if (conflict) {
+          throw new AppError("الرقم التسلسلي مستخدم بالفعل لمادة أخرى", 409, true, "SERIAL_ALREADY_EXISTS");
+        }
+      }
+
+      const setValues: Record<string, any> = { updatedAt: new Date() };
+      if (newSerial) {
+        setValues.serialNumber = newSerial;
+        setValues.barcode = newSerial;
+      }
+      if (newCarrier !== undefined) {
+        setValues.carrierName = newCarrier || null;
+      }
+
+      const [updated] = await tx
+        .update(items)
+        .set(setValues)
+        .where(eq(items.id, itemId))
+        .returning();
+
+      await tx.insert(itemHistoryLogs).values({
+        itemId: item.id,
+        fromStatus: item.status,
+        toStatus: item.status,
+        changedById: adminId,
+        notes: `تعديل بيانات بواسطة الأدمن: ${
+          newSerial && newSerial !== item.serialNumber ? `الرقم التسلسلي ${item.serialNumber} → ${newSerial}` : ""
+        }${newCarrier !== undefined ? ` الشركة الناقلة → ${newCarrier || "—"}` : ""}`.trim(),
+      });
+
+      await tx.insert(systemLogs).values({
+        userId: adminId,
+        userName: adminUsername,
+        userRole: adminRole,
+        action: "admin_update_serialized_item",
+        entityType: "item",
+        entityId: item.id,
+        entityName: updated.serialNumber,
+        details: JSON.stringify({
+          itemId: item.id,
+          previousSerialNumber: item.serialNumber,
+          newSerialNumber: updated.serialNumber,
+          previousCarrierName: item.carrierName,
+          newCarrierName: updated.carrierName,
+        }),
+        description: `تم تعديل بيانات المادة ${updated.serialNumber} بواسطة الأدمن`,
+        severity: "info",
+        success: true,
+      });
+
+      return updated;
     });
   }
 

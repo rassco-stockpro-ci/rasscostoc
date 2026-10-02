@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { serializedItemsContainer } from "@server/composition/serialized-items.container";
-import { requireAuth } from "@core/middlewares/auth.middleware";
+import { requireAuth, requireAdmin } from "@core/middlewares/auth.middleware";
 
 /**
  * Serialized Items Routing Configuration
@@ -59,5 +59,26 @@ export function registerSerializedItemsRoutes(app: Express): void {
     "/api/inventory/my-custody/items/:itemType/:identifier",
     requireAuth,
     controller.deleteFromMyCustody
+  );
+
+  // ADMIN ONLY — permanently delete any technician's serialized item (device/SIM) by
+  // its own database id. Used by the admin technician-item-details page, which
+  // previously called this exact path but no route existed for it (404 on every
+  // attempt — the bug behind "can't delete some products").
+  app.delete(
+    "/api/serialized-items/:id",
+    requireAuth,
+    requireAdmin,
+    controller.adminDeleteById
+  );
+
+  // ADMIN ONLY — correct serial number / carrier data-entry mistakes. Used by
+  // technician-item-details.tsx and verification.tsx, both of which previously
+  // called this exact path with no route registered for it (silent 404).
+  app.patch(
+    "/api/serialized-items/:id",
+    requireAuth,
+    requireAdmin,
+    controller.adminUpdateById
   );
 }

@@ -132,6 +132,12 @@ const DB_DEPENDENT_TEST_FILES = [
   // for GET /api/users/:id and the supervisor assignment read endpoints —
   // needs the real app, real routes, and a real authenticated request chain.
   "apps/api/src/core/tests/security/object-level-authorization.test.ts",
+  // TEMP-SYSTEM-STABILIZATION — real disposable-Postgres regression tests
+  // added during the temp-hosting stabilization work; same DB-dependent
+  // category as the files above.
+  "apps/api/src/modules/inventory/infrastructure/services/syncMovingInventoryConcurrency.test.ts",
+  "apps/api/src/modules/inventory/__integration__/technicians.controller.stabilization.test.ts",
+  "apps/api/src/modules/inventory/infrastructure/system/use-cases/ExportSystemBackup.stabilization.test.ts",
 ];
 
 const args = [

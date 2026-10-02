@@ -489,8 +489,14 @@ export default function TechnicianDetailsPage() {
         }
 
         if (itemType.requiresSerial || itemType.category === 'sim' || itemType.category === 'devices') {
+          // Serialized types (devices/SIMs) have no real concept of bulk "fixed" stock —
+          // every real unit is a row in the serialized items table. Any leftover value in
+          // technician_fixed_inventory_entries for these types is stale/erroneous manual
+          // data entry with no serial backing it, so it must never be shown as real stock.
           movingUnits = (serializedItems || []).filter((item: any) => item.itemTypeId === itemType.id).length;
           movingBoxes = 0;
+          fixedBoxes = 0;
+          fixedUnits = 0;
         }
 
         const colors = categoryColorMap[itemType.category] || categoryColorMap.other;
