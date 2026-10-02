@@ -14,8 +14,10 @@
  *                          0049_platform_lock_state, then main 0049-0054 under
  *                          Production's numbering/timestamps (+1000 ms). The
  *                          ledger it ends with has Production's high-water mark
- *                          (1785826886000) and no 0055+ objects. Seeded rows
- *                          stand in for business data.
+ *                          (1785826886000) and no 0055+ objects; like
+ *                          Production it lacks tech_product_unique and
+ *                          idempotency_keys. Seeded rows stand in for
+ *                          business data.
  *   --snapshot-dump FILE   (local) restores a verified pg_dump (custom format)
  *                          of Production into a throwaway database.
  *
@@ -180,6 +182,20 @@ function runRealMigrator(url) {
   return { ok: r.status === 0 && out.includes("Migrations completed successfully"), out };
 }
 
+/** scripts/on-conflict-audit.ts: every ON CONFLICT target in the backend source has a unique index. */
+function audit(url) {
+  const r = spawnSync(process.platform === "win32" ? "npx.cmd" : "npx", ["tsx", "scripts/on-conflict-audit.ts", url, "--json"], {
+    cwd: root,
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  try {
+    return { exit: r.status, ...JSON.parse((r.stdout ?? "").trim().split("\n").pop()) };
+  } catch {
+    return { exit: r.status, total: 0, missing: [{ table: "?", error: redact(r.stderr).slice(0, 200) }] };
+  }
+}
+
 // ── database helpers ─────────────────────────────────────────────────────────
 async function withClient(url, fn) {
   const c = new pg.Client({ connectionString: url });
@@ -332,6 +348,9 @@ try {
     check("snapshot.restore", r.status === 0, r.status === 0 ? "pg_restore exit 0" : redact(r.stderr).slice(0, 300));
   } else {
     await migrateFolder(prodUrl, mk(prodLineageEntries()));
+    // Production's schema predates main's chain and lacks two objects main creates early
+    // (verified on the restored backup): mirror that so 0063 is exercised, not a no-op.
+    await withClient(prodUrl, (c) => c.query(`drop index "tech_product_unique"; drop table "idempotency_keys"`));
     await withClient(prodUrl, seedSynthetic);
     check("snapshot.build", true, "Production lineage replayed + business rows seeded");
   }
@@ -354,6 +373,13 @@ try {
   check("pre.high_water_is_production", pre.highWater === PROD_HIGH_WATER, `created_at ${pre.highWater}, ${pre.rows} ledger rows`);
   check("pre.0055-0060_absent", !pre.regionId && !pre.assigned && !pre.units && !pre.perm, "region_id / assigned_to_user_id / units / permission tables absent");
   check("pre.platform_lock_state_present", pre.lock, "exists (created outside the migration chain)");
+  {
+    // the audit must see the real gap before reconciliation (proves it is not vacuous)
+    const aPre = audit(prodUrl);
+    const preMissing = (aPre.missing ?? []).map((m) => `${m.table}(${(m.columns ?? []).join(",")})`);
+    check("pre.onconflict_gap_detected", aPre.exit === 1 && preMissing.join(" ") === "technician_product_stock(technician_id,product_id)", `unbacked before: ${preMissing.join(" ") || "none"}`);
+    check("pre.idempotency_keys_absent", !(await withClient(prodUrl, (c) => c.query(`select to_regclass('public.idempotency_keys') is not null as v`))).rows[0].v, "as in Production");
+  }
 
   const biz = BUSINESS_TABLES.filter((t) => pre.cols[t]);
   const bizCols = Object.fromEntries(biz.map((t) => [t, pre.cols[t]]));
@@ -408,6 +434,8 @@ try {
       units: await v(`select 1 from pg_tables where tablename='courier_execution_units'`),
       itemLinks: await v(`select column_name from information_schema.columns where table_name='courier_request_items' and column_name in ('execution_unit_id','item_id') order by 1`),
       lock: await v(`select 1 from pg_tables where tablename='platform_lock_state'`),
+      techUnique: await v(`select 1 from pg_indexes where indexname='tech_product_unique' and indexdef like 'CREATE UNIQUE INDEX%(technician_id, product_id)'`),
+      idemKeys: await v(`select 1 from pg_constraint where conname='idempotency_keys_pkey'`),
     };
   });
   const tagOk = (prefix) => added.some((r, i) => addedTags[i].startsWith(prefix));
@@ -418,6 +446,7 @@ try {
   check("0059", tagOk("0059") && post.permTables.length === 2, "employee_permission_overrides + permission_change_audit");
   check("0060", tagOk("0060") && post.units.length === 1 && post.itemLinks.length === 2, "courier_execution_units + request-item links");
   check("platform_lock_state.baseline_noop_on_existing", tagOk("0062") && post.lock.length === 1, "baseline migration recorded; existing Production table left as is");
+  check("0063.runtime_dependencies", tagOk("0063") && post.techUnique.length === 1 && post.idemKeys.length === 1, "tech_product_unique (technician_id, product_id) + idempotency_keys present");
 
   // 3. Data unchanged ─────────────────────────────────────────────────────────
   const allAfter = await withClient(prodUrl, (c) => fingerprint(c, pre.cols));
@@ -464,6 +493,17 @@ try {
   const lockShape = (cat) => [...cat].filter((l) => /^(column|constraint|index)\|(platform_lock_state\.|platform_lock_state\|)/.test(l)).sort();
   const lockEq = JSON.stringify(lockShape(snap2b.cat)) === JSON.stringify(lockShape(zero.cat)) && lockShape(zero.cat).length > 0;
   check("zero.platform_lock_state_shape_equals_reconciled", lockEq, `${lockShape(zero.cat).length} column/constraint/index entries identical`);
+  const rtShape = (cat) =>
+    [...cat].filter((l) => /^(column|constraint|index)\|idempotency_keys[.|]/.test(l) || /^index\|technician_product_stock\|tech_product_unique\|/.test(l)).sort();
+  const rtEq = JSON.stringify(rtShape(snap2b.cat)) === JSON.stringify(rtShape(zero.cat)) && rtShape(zero.cat).length >= 8;
+  check("zero.0063_objects_equal_reconciled", rtEq, `${rtShape(zero.cat).length} idempotency_keys / tech_product_unique entries identical`);
+
+  // ON CONFLICT audit: every target used by the backend source has a unique index
+  const aRec = audit(prodUrl);
+  const aZero = audit(zeroUrl);
+  const missingList = (a) => a.missing.map((m) => `${m.table}(${(m.columns ?? []).join(",")})`).join(" ") || "none";
+  check("onconflict.reconciled", aRec.exit === 0 && aRec.total > 0, `${aRec.total} targets, unbacked: ${missingList(aRec)}`);
+  check("onconflict.from_zero", aZero.exit === 0 && aZero.total > 0, `${aZero.total} targets, unbacked: ${missingList(aZero)}`);
 
   // 6. Drift / schema consistency ─────────────────────────────────────────────
   const dBefore = diffSet(pre.catalog, catZeroPartial); // legacy + lineage gap
