@@ -14,6 +14,8 @@ const CUSTODY_DELETE_ITEM_TYPE_TO_CATEGORY: Record<string, string> = {
   DEVICE: "devices",
   SIM: "sim",
 };
+/** custody_movements.reason values that mean "this technician delivered this item to a customer". */
+const DELIVERY_CUSTODY_MOVEMENT_REASONS = ["DELIVERED", "DELIVERY"];
 
 export class SerializedItemsService {
   /**
@@ -289,6 +291,10 @@ export class SerializedItemsService {
       // this SELECT re-runs against the post-commit state and correctly
       // finds nothing (status already DELIVERED) — same pattern already
       // used by deleteFromTechnicianCustody below.
+      //
+      // ROOT FIX: the same lock closes the double-tap/two-request race on
+      // the exact serial so only one transaction can transition it out of
+      // active technician custody.
       const [item] = await tx
         .select()
         .from(items)
@@ -306,7 +312,10 @@ export class SerializedItemsService {
         throw new Error("المادة غير موجودة في عهرتك النشطة أو الرقم التسلسلي غير مطابق");
       }
 
-      // Update item to DELIVERED
+      // Update item to DELIVERED — WHERE re-checks status/owner (not just
+      // id) as defense-in-depth alongside the FOR UPDATE lock above: this
+      // statement only ever "succeeds" against the exact row state just
+      // locked and verified, never a stale id alone.
       const [updatedItem] = await tx
         .update(items)
         .set({
@@ -314,7 +323,13 @@ export class SerializedItemsService {
           currentOwnerId: null, // delivered to customer
           updatedAt: new Date(),
         })
-        .where(eq(items.id, item.id))
+        .where(
+          and(
+            eq(items.id, item.id),
+            eq(items.currentOwnerId, technicianId),
+            inArray(items.status, ["IN_TRANSIT_CUSTODY", "RECEIVED_BY_TECHNICIAN"])
+          )
+        )
         .returning();
 
       if (!updatedItem) {
@@ -572,6 +587,12 @@ export class SerializedItemsService {
    * confirmation UX is the caller's own AlertDialog rather than a retyped serial.
    * Carries the same safeguards: active-courier-relation guard, audit-first, cascade
    * delete, and official moving-inventory resync.
+   *
+   * UNCHANGED from before the technicianDeleteOwnSerializedItem feature below was
+   * added — deliberately NOT refactored to share code with it. The small amount of
+   * overlapping logic is duplicated in technicianDeleteOwnSerializedItem instead of
+   * extracting a shared helper, so this admin path's production code/behavior stays
+   * byte-for-byte what it was.
    */
   async adminDeleteSerializedItemById(
     adminId: string,
@@ -653,6 +674,197 @@ export class SerializedItemsService {
           ],
         }),
         description: `حذف الأدمن ${itemTypeRow?.category === "sim" ? "الشريحة" : "الجهاز"} ${item.serialNumber} نهائيًا من عهدة الفني`,
+        severity: "warn",
+        success: true,
+      });
+
+      const deletedRows = await tx.delete(items).where(eq(items.id, item.id)).returning();
+      if (!deletedRows || deletedRows.length === 0) {
+        throw new Error("فشل حذف العنصر");
+      }
+
+      if (item.currentOwnerId && isActiveCustodyStatus(item.status)) {
+        await this.syncMovingInventory(tx, item.currentOwnerId, item.itemTypeId, -1);
+      }
+
+      return {
+        itemId: item.id,
+        serialNumber: item.serialNumber,
+        deleted: true,
+      };
+    });
+  }
+
+  /**
+   * TEMPORARY FEATURE — remove after final inventory workflow is released.
+   *
+   * Lets the *authenticated* technician permanently delete a single serialized
+   * item (device/SIM) by its own database id — either one they currently hold,
+   * or one they themselves already delivered — as a stopgap until the real
+   * inventory-workflow rewrite (separate track) ships.
+   *
+   * Order of operations is deliberate: Authentication (the caller's identity,
+   * already established by requireAuth before this is ever invoked, and taken
+   * only from req.user — never from anything the client's request body/Flutter
+   * app supplies) → Ownership verification (below, against the row this
+   * transaction just locked) → the same delete logic adminDeleteSerializedItemById
+   * uses. Deliberately does NOT call adminDeleteSerializedItemById or share a
+   * helper with it — the small amount of overlapping logic (courier-relation
+   * guard, audit log, delete, conditional resync) is duplicated here on purpose,
+   * so admin's existing production code path is never touched by this feature.
+   *
+   * Ownership is re-derived from the database, never trusted from the client:
+   *   - Actively-held item (status in TECHNICIAN_HELD_STATUSES): the locked
+   *     row's `currentOwnerId` must equal this technician's id.
+   *   - DELIVERED item (currentOwnerId is NULL by then — scanOut/custody-engine
+   *     already cleared it at delivery time): ownership is proven via the
+   *     custody_movements ledger — but specifically the MOST RECENT
+   *     delivery-reason movement recorded for this exact item, not just any
+   *     historical row naming this technician. A serial can pass through
+   *     multiple technicians over its lifetime (custody transfers, or an
+   *     earlier delivery that was later reversed and redelivered); only the
+   *     single movement that actually produced the CURRENT "DELIVERED" state
+   *     is authoritative. If technician A once delivered this exact item but
+   *     it was later returned, transferred to technician B, and B performed
+   *     the delivery that produced today's DELIVERED status, A must get 403
+   *     even though A's name still appears somewhere in this item's history.
+   * Any other case (wrong technician, or a status that is neither actively
+   * held nor DELIVERED, e.g. RETURNED/WITHDRAWN) is rejected — 403
+   * ITEM_NOT_IN_YOUR_CUSTODY — without revealing who the real owner is.
+   *
+   * Quantity behavior is byte-for-byte the same conditional rule
+   * adminDeleteSerializedItemById already used: decrement by 1 only when the
+   * item was actively held at deletion time. A DELIVERED item is deleted with
+   * NO further decrement — scanOut/custody-engine already decremented moving
+   * inventory once, at delivery time, so this never double-decrements (9
+   * delivered devices deleted here must still read as 9, not 8, on both this
+   * app and the main system).
+   *
+   * Does NOT touch scanOut, custody-engine, or the delivery mechanism at all.
+   */
+  async technicianDeleteOwnSerializedItem(
+    technicianId: string,
+    technicianUsername: string,
+    technicianRole: string,
+    itemId: string,
+    reason?: string
+  ) {
+    const auditReason = (reason || "").trim() || "technician_cleanup_before_final_workflow";
+
+    return await db.transaction(async (tx: any) => {
+      // Lock the target row for the duration of the transaction — a concurrent
+      // scan-out/transfer/second-delete-attempt for the same row must serialize
+      // behind this one, not race it.
+      const [item] = await tx
+        .select()
+        .from(items)
+        .where(eq(items.id, itemId))
+        .for("update");
+
+      if (!item) {
+        throw new NotFoundError("العنصر غير موجود");
+      }
+
+      const isActivelyHeldByThisTechnician =
+        item.currentOwnerId === technicianId && isActiveCustodyStatus(item.status);
+
+      let ownershipVerified = isActivelyHeldByThisTechnician;
+
+      if (!ownershipVerified && item.status === "DELIVERED") {
+        // currentOwnerId is NULL at this point (cleared by scanOut/custody-engine at
+        // delivery time) — the custody ledger is the only authoritative record of
+        // who actually delivered it. Deliberately NOT filtered by fromOwnerId here:
+        // we first find the single MOST RECENT delivery-reason movement for this
+        // item (whoever performed it), and only THEN compare its fromOwnerId to
+        // this technician — never the reverse (searching for "any row naming this
+        // technician"), which could match a stale movement from an earlier custody
+        // cycle that is not what actually produced the item's current DELIVERED
+        // status (e.g. delivered once by A, later returned, redelivered by B).
+        const [latestDeliveryMovement] = await tx
+          .select({ fromOwnerId: custodyMovements.fromOwnerId })
+          .from(custodyMovements)
+          .where(
+            and(
+              eq(custodyMovements.itemId, item.id),
+              inArray(custodyMovements.reason, DELIVERY_CUSTODY_MOVEMENT_REASONS)
+            )
+          )
+          .orderBy(desc(custodyMovements.performedAt))
+          .limit(1);
+
+        ownershipVerified =
+          !!latestDeliveryMovement && latestDeliveryMovement.fromOwnerId === technicianId;
+      }
+
+      if (!ownershipVerified) {
+        throw new AppError(
+          "لا يمكنك حذف عنصر غير موجود في عهدتك",
+          403,
+          true,
+          "ITEM_NOT_IN_YOUR_CUSTODY"
+        );
+      }
+
+      const [itemTypeRow] = await tx
+        .select({ nameAr: itemTypes.nameAr, nameEn: itemTypes.nameEn, category: itemTypes.category })
+        .from(itemTypes)
+        .where(eq(itemTypes.id, item.itemTypeId))
+        .limit(1);
+
+      const candidates = await SerialRecognitionService.buildStoredSerialCandidates(
+        item.serialNumber,
+        undefined,
+        tx
+      );
+
+      const linkedCourierRows = candidates.length
+        ? await tx
+            .select({ status: courierRequestItems.status })
+            .from(courierRequestItems)
+            .where(inArray(courierRequestItems.serialNumber, candidates))
+        : [];
+
+      const hasActiveCourierRequest = linkedCourierRows.some(
+        (row: any) => !TERMINAL_COURIER_REQUEST_STATUSES.includes(row.status)
+      );
+
+      if (hasActiveCourierRequest) {
+        throw new AppError(
+          "لا يمكن حذف العنصر لارتباطه بعملية نشطة",
+          409,
+          true,
+          "ITEM_HAS_ACTIVE_RELATIONS"
+        );
+      }
+
+      await tx.insert(systemLogs).values({
+        userId: technicianId,
+        userName: technicianUsername,
+        userRole: technicianRole,
+        action: "technician_delete_own_serialized_item",
+        entityType: "item",
+        entityId: item.id,
+        entityName: item.serialNumber,
+        details: JSON.stringify({
+          itemId: item.id,
+          serialNumber: item.serialNumber,
+          itemTypeId: item.itemTypeId,
+          itemTypeNameAr: itemTypeRow?.nameAr,
+          itemTypeNameEn: itemTypeRow?.nameEn,
+          category: itemTypeRow?.category,
+          previousStatus: item.status,
+          previousOwnerId: item.currentOwnerId,
+          warehouseId: item.warehouseId,
+          reason: auditReason,
+          affectedTables: [
+            "items",
+            "inventory_transactions",
+            "item_history_logs",
+            "custody_movements",
+            "technician_moving_inventory_entries",
+          ],
+        }),
+        description: `حذف الفني ${itemTypeRow?.category === "sim" ? "الشريحة" : "الجهاز"} ${item.serialNumber} نهائيًا من عهدته الخاصة (ميزة مؤقتة قبل إطلاق نظام المخزون النهائي)`,
         severity: "warn",
         success: true,
       });
