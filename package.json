@@ -33,6 +33,7 @@
     "db:erp002:catch-up-dry": "node scripts/erp002-migration-audit.mjs --catch-up-dry-run",
     "db:erp002:catch-up": "node scripts/erp002-migration-audit.mjs --catch-up",
     "db:erp002:greenfield-proof": "node scripts/erp002-greenfield-migrate-proof.mjs",
+    "db:lineage:rehearsal": "node scripts/migration-lineage-rehearsal.mjs --allow-test-db --synthetic",
     "db:drift-check": "node scripts/erp008-drift-check.mjs",
     "db:backup-drill": "node scripts/erp008-backup-drill.mjs",
     "db:item-types:constraints": "tsx scripts/apply-item-types-constraints.ts",
