@@ -1,9 +1,10 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, serial, real, uuid, jsonb, doublePrecision, index, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, serial, real, uuid, jsonb, doublePrecision, index, primaryKey, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./organization.schema";
 import { regions } from "./catalog.schema";
+import { items } from "./serialized_items.schema";
 
 // 1. Cities
 export const courierCities = pgTable("courier_cities", {
@@ -124,7 +125,11 @@ export const courierRequestItems = pgTable("courier_request_items", {
   id: serial("id").primaryKey(),
   requestId: integer("request_id").notNull().references(() => courierRequests.id, { onDelete: 'cascade' }),
   itemType: text("item_type").notNull(), // 'POS', 'SIM', 'ACCESSORY', etc.
+  // Legacy, dead: integer while items.id is a varchar UUID. Superseded by
+  // itemId (migration 0060); kept untouched during the transition period.
   inventoryItemId: integer("inventory_item_id"),
+  /** The inventory item this row stands for (migration 0060). */
+  itemId: varchar("item_id").references(() => items.id, { onDelete: "restrict" }),
   serialNumber: text("serial_number"),
   simSerial: text("sim_serial"),
   quantity: integer("quantity").notNull().default(1),
@@ -134,9 +139,14 @@ export const courierRequestItems = pgTable("courier_request_items", {
   installedAt: timestamp("installed_at"),
   deliveredAt: timestamp("delivered_at"),
   technicianId: varchar("technician_id").references(() => users.id),
+  /** The installation unit this item was installed in (set with INSTALLED; migration 0060). */
+  executionUnitId: integer("execution_unit_id").references((): any => courierExecutionUnits.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  courierRequestItemsRequestIdx: index("courier_request_items_request_idx").on(table.requestId),
+  courierRequestItemsExecutionUnitIdx: index("courier_request_items_execution_unit_idx").on(table.executionUnitId),
+}));
 
 // 6. Courier Executions
 export const courierExecutions = pgTable("courier_executions", {
@@ -186,6 +196,48 @@ export const courierExecutions = pgTable("courier_executions", {
   courierExecutionsSimTypeIdx: index("courier_executions_sim_type_idx").on(table.simType),
   courierExecutionsPriorityIdx: index("courier_executions_priority_idx").on(table.requestPriorityLevel),
 }));
+
+// 6.1. Courier Execution Units (migration 0060) — one row per installed
+// terminal of a close: exactly one device, at most one SIM (or an explicit
+// waiver), optional TID. The unit IS the Device<->SIM pairing. Written only
+// inside the close transaction (CloseRequestUseCase.commit), never updated.
+export const EXECUTION_UNIT_PAIRING_SOURCES = ["EXPLICIT", "LEGACY_INFERRED", "LEGACY_BACKFILL"] as const;
+export type ExecutionUnitPairingSource = (typeof EXECUTION_UNIT_PAIRING_SOURCES)[number];
+
+export const courierExecutionUnits = pgTable("courier_execution_units", {
+  id: serial("id").primaryKey(),
+  requestId: integer("request_id").notNull().references(() => courierRequests.id, { onDelete: "cascade" }),
+  executionId: integer("execution_id").notNull().references(() => courierExecutions.id, { onDelete: "cascade" }),
+  unitNo: integer("unit_no").notNull(),
+  deviceItemId: varchar("device_item_id").notNull().references(() => items.id, { onDelete: "restrict" }),
+  deviceSerial: text("device_serial").notNull(),
+  simItemId: varchar("sim_item_id").references(() => items.id, { onDelete: "restrict" }),
+  simSerial: text("sim_serial"),
+  simWaived: boolean("sim_waived").notNull().default(false),
+  tid: text("tid"),
+  pairingSource: text("pairing_source").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  requestUnitNoUq: unique("courier_execution_units_request_unit_no_uq").on(table.requestId, table.unitNo),
+  requestDeviceUq: unique("courier_execution_units_request_device_uq").on(table.requestId, table.deviceItemId),
+  requestSimUq: uniqueIndex("courier_execution_units_request_sim_uq").on(table.requestId, table.simItemId).where(sql`${table.simItemId} IS NOT NULL`),
+  executionIdx: index("courier_execution_units_execution_idx").on(table.executionId),
+  deviceSerialIdx: index("courier_execution_units_device_serial_idx").on(table.deviceSerial),
+  simSerialIdx: index("courier_execution_units_sim_serial_idx").on(table.simSerial),
+  unitNoPositive: check("courier_execution_units_unit_no_positive_check", sql`${table.unitNo} >= 1`),
+  pairingSourceCheck: check(
+    "courier_execution_units_pairing_source_check",
+    sql`${table.pairingSource} IN ('EXPLICIT', 'LEGACY_INFERRED', 'LEGACY_BACKFILL')`
+  ),
+  simConsistency: check(
+    "courier_execution_units_sim_consistency_check",
+    sql`(${table.simItemId} IS NULL AND ${table.simSerial} IS NULL AND ${table.simWaived}) OR (${table.simItemId} IS NOT NULL AND ${table.simSerial} IS NOT NULL AND NOT ${table.simWaived})`
+  ),
+  deviceNeSim: check("courier_execution_units_device_ne_sim_check", sql`${table.simItemId} IS NULL OR ${table.simItemId} <> ${table.deviceItemId}`),
+}));
+
+export type CourierExecutionUnitRow = typeof courierExecutionUnits.$inferSelect;
+export type InsertCourierExecutionUnit = typeof courierExecutionUnits.$inferInsert;
 
 // 7. PDF Reports
 export const courierPdfReports = pgTable("courier_pdf_reports", {

@@ -22,7 +22,9 @@
 import type { CourierTransactionalContext, ICourierUnitOfWork } from "../../domain/repositories/ICourierUnitOfWork";
 import type { ICourierInventoryPort } from "../../domain/repositories/ICourierInventoryPort";
 import { assertRequestItemTransition } from "../../domain/request-item.state-machine";
-import type { CloseItem, RequestItemBinding } from "../guards/CompletionGuard";
+import type { CloseItem, RequestItemBinding, UnitCountWarning } from "../guards/CompletionGuard";
+import type { PairingSource, ResolvedCloseUnit } from "../../domain/execution-unit";
+import type { CourierExecutionUnit } from "../../domain/courier.types";
 import type { InventoryEngine, PreparedDeduction } from "../inventory/inventory.engine";
 import { DeductionError, type DeductionErrorCode } from "../inventory/inventory.engine.types";
 import { resolveConsumableQuantities } from "../inventory/consumables";
@@ -53,6 +55,10 @@ export interface ClosePlan {
   /** The serials this close validated — the only ones it installs and deducts. */
   closeItems: CloseItem[];
   requestItemsToBind: RequestItemBinding[];
+  /** The installation units (device [+ SIM]) this close persists. */
+  units: ResolvedCloseUnit[];
+  pairingSource: PairingSource | null;
+  countWarning: UnitCountWarning | null;
 }
 
 export interface PlanCloseInput {
@@ -62,7 +68,9 @@ export interface PlanCloseInput {
   technicianCode: string;
   closeItems: CloseItem[];
   requestItemsToBind: RequestItemBinding[];
-  pairs?: any[];
+  units: ResolvedCloseUnit[];
+  pairingSource: PairingSource | null;
+  countWarning: UnitCountWarning | null;
 }
 
 export class CloseRequestUseCase {
@@ -79,9 +87,10 @@ export class CloseRequestUseCase {
    * re-validated under row locks in commit().
    */
   async plan(input: PlanCloseInput): Promise<ClosePlan> {
-    const { requestId, request, closeItems, requestItemsToBind } = input;
+    const { requestId, request, closeItems, requestItemsToBind, units, pairingSource, countWarning } = input;
+    const base = { closeItems, requestItemsToBind, units, pairingSource, countWarning };
     if (await this.inventoryPort.hasInventoryDeductionCompletion(requestId)) {
-      return { prepared: null, closeItems, requestItemsToBind };
+      return { prepared: null, ...base };
     }
 
     const serials = closeItems.map((item) => item.serialNumber);
@@ -92,7 +101,11 @@ export class CloseRequestUseCase {
         technicianCode: input.technicianCode,
         devices: serials.map((serialNumber) => ({ serialNumber, model: request.vendorType ?? undefined })),
         serialsForCustody: serials,
-        pairs: input.pairs,
+        // Every SIM is paired with its unit's device: the engine re-checks the
+        // pairs against the request-item ledger inside the transaction.
+        pairs: units
+          .filter((u) => u.sim)
+          .map((u) => ({ sn: u.device.serialNumber, simSerial: u.sim!.serialNumber })),
         // Consumable quantities come from the saved row, in commit().
         customerName: request.customerName ?? "عميل غير معروف",
         referenceNumber: request.incidentNumber ?? String(requestId),
@@ -102,7 +115,7 @@ export class CloseRequestUseCase {
       .catch((err) => {
         throw CloseRequestUseCase.toCloseError(err);
       });
-    return { prepared, closeItems, requestItemsToBind };
+    return { prepared, ...base };
   }
 
   /** Runs a close transaction, refusing the close with an API error if its deduction fails. */
@@ -127,23 +140,31 @@ export class CloseRequestUseCase {
       );
     }
 
-    // 2. This close's request items -> INSTALLED; every other item keeps its status.
-    await this.installCloseItems(ctx, requestId, plan.closeItems, now);
+    // 2. The installation units (the Device<->SIM pairing), once per request:
+    //    a re-save of an already-deducted request writes none.
+    const execution = event.payload.execution ?? {};
+    const persistedUnits = plan.prepared ? await this.insertUnits(ctx, requestId, execution.id, plan) : [];
+    execution.units = persistedUnits;
 
-    // 3. Deduction (quantities from the row just saved, by the one consumables rule).
+    // 3. This close's request items -> INSTALLED, linked to their unit;
+    //    every other item keeps its status.
+    await this.installCloseItems(ctx, requestId, plan.closeItems, persistedUnits, now);
+
+    // 4. Deduction: every device and SIM locked FOR UPDATE (item-id order),
+    //    custody re-validated, scanned out; consumables; completion row.
     if (plan.prepared) {
       Object.assign(plan.prepared.ctx, {
-        ...resolveConsumableQuantities(event.payload.execution ?? {}, null),
+        ...resolveConsumableQuantities(execution, null),
         // The completion row's source_event_id is the event this transaction enqueues.
         sourceEventId: event.id,
       });
       await this.engine.executePrepared(plan.prepared, ctx.inventoryTransaction);
     }
 
-    // 4. The completion row exists now (written above, or by an earlier close).
+    // 5. The completion row exists now (written above, or by an earlier close).
     await ctx.executionsRepository.updateCustodyClosureStatus(requestId, NOT_YET_CLOSED_STATES, "CLOSED_SUCCESS");
 
-    // 5.
+    // 6. Audit.
     if (plan.prepared) {
       await ctx.dashboardRepository.insertAuditLog({
         tableName: "courier_executions",
@@ -153,9 +174,30 @@ export class CloseRequestUseCase {
         action: "INVENTORY_DEDUCTED",
         changedBy: actorId,
       });
+      if (plan.pairingSource === "LEGACY_INFERRED") {
+        await ctx.dashboardRepository.insertAuditLog({
+          tableName: "courier_execution_units",
+          recordId: requestId,
+          fieldName: "pairing_source",
+          newValue: `LEGACY_INFERRED (${persistedUnits.length} unit(s) paired by submission order)`,
+          action: "UNIT_PAIRING_INFERRED",
+          changedBy: actorId,
+        });
+      }
+      if (plan.countWarning) {
+        await ctx.dashboardRepository.insertAuditLog({
+          tableName: "courier_execution_units",
+          recordId: requestId,
+          fieldName: "unit_count",
+          oldValue: String(plan.countWarning.expected),
+          newValue: String(plan.countWarning.actual),
+          action: "UNIT_COUNT_MISMATCH",
+          changedBy: actorId,
+        });
+      }
     }
 
-    // 6. On this transaction, no in-memory fallback: the close cannot commit
+    // 7. On this transaction, no in-memory fallback: the close cannot commit
     // without its event row.
     await ctx.outbox.enqueue(event);
   }
@@ -166,9 +208,44 @@ export class CloseRequestUseCase {
    * validated that the technician holds it). Already INSTALLED: unchanged.
    * Anything else is not a defined transition and refuses the close (422).
    */
-  private async installCloseItems(ctx: CourierTransactionalContext, requestId: number, closeItems: CloseItem[], now: Date) {
+  private async insertUnits(
+    ctx: CourierTransactionalContext,
+    requestId: number,
+    executionId: number,
+    plan: ClosePlan
+  ): Promise<CourierExecutionUnit[]> {
+    if (plan.units.length === 0) return [];
+    return ctx.executionsRepository.insertExecutionUnits(
+      plan.units.map((u) => ({
+        requestId,
+        executionId,
+        unitNo: u.unitNo,
+        deviceItemId: u.device.itemId,
+        deviceSerial: u.device.serialNumber,
+        simItemId: u.sim?.itemId ?? null,
+        simSerial: u.sim?.serialNumber ?? null,
+        simWaived: u.simWaived,
+        tid: u.tid,
+        pairingSource: plan.pairingSource ?? "EXPLICIT",
+      }))
+    );
+  }
+
+  private async installCloseItems(
+    ctx: CourierTransactionalContext,
+    requestId: number,
+    closeItems: CloseItem[],
+    units: CourierExecutionUnit[],
+    now: Date
+  ) {
     if (closeItems.length === 0) return;
     const closeSerials = new Set(closeItems.map((item) => item.serialNumber));
+    const unitOf = new Map<string, CourierExecutionUnit>();
+    for (const u of units) {
+      unitOf.set(u.deviceSerial, u);
+      if (u.simSerial) unitOf.set(u.simSerial, u);
+    }
+    const itemIdOf = new Map(closeItems.map((item) => [item.serialNumber, item.itemId]));
     const items = await ctx.requestsRepository.findRequestItems(requestId);
     for (const item of items) {
       const inClose =
@@ -181,11 +258,14 @@ export class CloseRequestUseCase {
         from = "RECEIVED";
       }
       assertRequestItemTransition(from, "INSTALL", "INSTALLED");
+      const serial = (item.serialNumber && closeSerials.has(item.serialNumber) ? item.serialNumber : item.simSerial) as string;
       await ctx.requestsRepository.updateRequestItem(item.id, {
         status: "INSTALLED",
         receivedAt: (item as any).receivedAt ?? now,
         installedAt: now,
         deliveredAt: now,
+        ...(unitOf.get(serial) ? { executionUnitId: unitOf.get(serial)!.id } : {}),
+        ...(itemIdOf.get(serial) ? { itemId: itemIdOf.get(serial) } : {}),
       });
     }
   }

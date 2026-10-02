@@ -28,6 +28,8 @@ const { mockRepoInstance, mockOutbox } = vi.hoisted(() => {
       deleteRequestItems: vi.fn(),
       hasInventoryDeductionCompletion: vi.fn().mockResolvedValue(false),
       updateCustodyClosureStatus: vi.fn().mockResolvedValue({ id: 10 }),
+      insertExecutionUnits: vi.fn(async (units: any[]) => units.map((u, i) => ({ id: 700 + i, ...u }))),
+      getTechnicianConsumableBalances: vi.fn().mockResolvedValue({}),
     }
   };
 });
@@ -189,6 +191,20 @@ describe("Courier Execution Engine & Attempts Lifecycle", () => {
       // transaction, and only the request items installed by THIS attempt
       // become INSTALLED — an unrelated RECEIVED item is left alone.
       mockOutbox.enqueue.mockResolvedValue(undefined);
+      // Inventory as the guards see it: both serials held by tech-1, with their real categories.
+      vi.mocked(drizzleCourierRepository.findItemBySerial).mockImplementation(async (serial: string) => ({
+        id: `item-${serial}`,
+        serialNumber: serial,
+        status: "RECEIVED_BY_TECHNICIAN",
+        currentOwnerId: "tech-1",
+        itemTypeId: serial.includes("SIM") ? "type-sim" : "type-device",
+      }) as any);
+      vi.mocked(drizzleCourierRepository.findItemTypeById).mockImplementation(async (id: string) => ({
+        id, nameAr: id, nameEn: id, category: id === "type-sim" ? "sim" : "devices",
+      }) as any);
+      vi.mocked(drizzleCourierRepository.findUserById).mockResolvedValue({
+        id: "tech-1", username: "tech.one", fullName: "Tech One", technicianCode: null, role: "technician", regionId: null,
+      } as any);
 
       vi.mocked(drizzleCourierRepository.findRequestById).mockResolvedValue({ id: 1, customerName: "Test" } as any);
       vi.mocked(drizzleCourierRepository.findExecutionByRequestId).mockResolvedValue({

@@ -112,7 +112,7 @@ describe("OPS-REMED-E12 — atomic PDF-report approval/rejection transaction", (
       id: itemTypeId,
       nameAr: `نوع-${itemTypeId.slice(0, 8)}`,
       nameEn: `Type-${itemTypeId.slice(0, 8)}`,
-      category: "device",
+      category: "devices",
     });
     createdItemTypeIds.push(itemTypeId);
 
@@ -129,10 +129,17 @@ describe("OPS-REMED-E12 — atomic PDF-report approval/rejection transaction", (
 
     // Its SIM, in the same custody: completeBody() sends a complete
     // device/SIM pair, which the close's in-transaction deduction requires.
+    const simItemTypeId = randomUUID();
+    await db.insert(itemTypes).values({
+      id: simItemTypeId,
+      nameAr: `شريحة-${simItemTypeId.slice(0, 8)}`,
+      nameEn: `Sim-${simItemTypeId.slice(0, 8)}`,
+      category: "sim",
+    });
     const simItemId = randomUUID();
     await db.insert(items).values({
       id: simItemId,
-      itemTypeId,
+      itemTypeId: simItemTypeId,
       serialNumber: simSerialFor(serialNumber),
       barcode: `${simSerialFor(serialNumber)}-BAR`,
       status: "RECEIVED_BY_TECHNICIAN",

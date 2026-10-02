@@ -7,6 +7,7 @@ import { AppError } from "@core/errors/AppError";
 import type { ICourierRequestsRepository } from "../../domain/repositories/ICourierRequestsRepository";
 import type { ICourierInventoryPort } from "../../domain/repositories/ICourierInventoryPort";
 import type { ICourierDashboardReadRepository } from "../../domain/repositories/ICourierDashboardReadRepository";
+import type { CloseUnitsPlan } from "../../domain/execution-unit";
 
 /**
  * What a guard may do with the database: read, plus append the audit row of
@@ -24,6 +25,7 @@ export type GuardInventoryReader = Pick<
   | "findUserByFuzzyName"
   | "hasInventoryDeductionCompletion"
   | "getTechnicianConsumableBalances"
+  | "findItemTypeById"
 >;
 /** The only write a guard performs: the append-only audit row of a rejection. */
 export type GuardRejectionAudit = Pick<ICourierDashboardReadRepository, "insertAuditLog">;
@@ -55,6 +57,8 @@ export interface ExecutionInput {
   deviceSerials?: string[];
   /** Extra SIMs beyond primary `simSerial` (portal multi-serial close). */
   simSerials?: string[];
+  /** Installation units (units[] contract or PDF devices[]); absent = legacy fields above. */
+  units?: CloseUnitsPlan;
   extraField1?: string;
   extraField2?: string;
   [key: string]: any;

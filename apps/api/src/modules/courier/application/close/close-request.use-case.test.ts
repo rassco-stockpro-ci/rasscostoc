@@ -28,7 +28,10 @@ function harness(items: any[] = []) {
         return rows.find((r) => r.id === id);
       }),
     },
-    executionsRepository: { updateCustodyClosureStatus: vi.fn(async () => (calls.push("closed"), {})) },
+    executionsRepository: {
+      updateCustodyClosureStatus: vi.fn(async () => (calls.push("closed"), {})),
+      insertExecutionUnits: vi.fn(async (list: any[]) => (calls.push("units"), list.map((u, i) => ({ id: 500 + i, ...u })))),
+    },
     dashboardRepository: { insertAuditLog: vi.fn(async () => (calls.push("audit"), {})) },
     outbox: { enqueue: vi.fn(async () => (calls.push("enqueue"), undefined)) },
     inventoryTransaction: HANDLE,
@@ -47,11 +50,15 @@ function harness(items: any[] = []) {
 }
 
 const CLOSE_ITEMS = [
-  { serialNumber: "DEV-A", role: "device" as const },
-  { serialNumber: "SIM-A", role: "sim" as const },
+  { serialNumber: "DEV-A", role: "device" as const, itemId: "dev-a" },
+  { serialNumber: "SIM-A", role: "sim" as const, itemId: "sim-a" },
 ];
 
-const event = (execution: any = { paperRollQty: 2 }) =>
+const UNITS = [
+  { unitNo: 1, device: { itemId: "dev-a", serialNumber: "DEV-A" }, sim: { itemId: "sim-a", serialNumber: "SIM-A" }, simWaived: false, tid: "T1" },
+];
+
+const event = (execution: any = { id: 9, paperRollQty: 2 }) =>
   new ExecutionCompletedEvent({ requestId: 7, actorId: "u1", execution, request: { id: 7 } });
 
 async function planFor(h: ReturnType<typeof harness>, bind: any[] = []): Promise<ClosePlan> {
@@ -62,6 +69,9 @@ async function planFor(h: ReturnType<typeof harness>, bind: any[] = []): Promise
     technicianCode: "tech",
     closeItems: CLOSE_ITEMS,
     requestItemsToBind: bind,
+    units: UNITS,
+    pairingSource: "EXPLICIT",
+    countWarning: null,
   });
 }
 
@@ -73,7 +83,12 @@ describe("CloseRequestUseCase — the close transaction contract", () => {
 
     await h.useCase.commit(h.ctx, plan, ev);
 
-    expect(h.calls).toEqual(["bind", "install:1", "install:1001", "deduct", "closed", "audit", "enqueue"]);
+    expect(h.calls).toEqual(["bind", "units", "install:1", "install:1001", "deduct", "closed", "audit", "enqueue"]);
+    // each installed request item points at its unit
+    expect(h.rows.find((r) => r.id === 1)!.executionUnitId).toBe(500);
+    expect(h.ctx.executionsRepository.insertExecutionUnits.mock.calls[0][0][0]).toMatchObject({
+      requestId: 7, executionId: 9, unitNo: 1, deviceItemId: "dev-a", simItemId: "sim-a", tid: "T1", pairingSource: "EXPLICIT",
+    });
     expect(h.engine.executePrepared.mock.calls[0][1]).toBe(HANDLE);
     expect(h.ctx.outbox.enqueue).toHaveBeenCalledWith(ev);
     const prepared = h.engine.executePrepared.mock.calls[0][0] as any;
@@ -141,7 +156,7 @@ describe("CloseRequestUseCase — the close transaction contract", () => {
 
   it("quantities come from the saved row by the one consumables rule (legacy NULL + 'Yes' = 1 roll)", async () => {
     const h = harness();
-    await h.useCase.commit(h.ctx, await planFor(h), event({ paperRollQty: null, paperRoll: "Yes", stickersQty: 3, nulipCardsQty: 0 }));
+    await h.useCase.commit(h.ctx, await planFor(h), event({ id: 9, paperRollQty: null, paperRoll: "Yes", stickersQty: 3, nulipCardsQty: 0 }));
     const c = (h.engine.executePrepared.mock.calls[0][0] as any).ctx;
     expect([c.paperRollQty, c.stickersQty, c.nulipCardsQty]).toEqual([1, 3, 0]);
   });

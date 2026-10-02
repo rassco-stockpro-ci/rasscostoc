@@ -1,4 +1,4 @@
-import type { CourierExecution, CourierExecutionAttempt } from "../courier.types";
+import type { CourierExecution, CourierExecutionAttempt, CourierExecutionUnit } from "../courier.types";
 
 export interface ICourierExecutionsRepository {
   findExecutionByRequestId(requestId: number, tx?: any): Promise<CourierExecution | null>;
@@ -20,4 +20,7 @@ export interface ICourierExecutionsRepository {
     toState: string,
     tx?: any
   ): Promise<CourierExecution | null>;
+  /** Installation units of a close; written only inside the close transaction. */
+  insertExecutionUnits(units: Omit<CourierExecutionUnit, "id" | "createdAt">[], tx?: any): Promise<CourierExecutionUnit[]>;
+  findExecutionUnitsByRequestId(requestId: number, tx?: any): Promise<CourierExecutionUnit[]>;
 }

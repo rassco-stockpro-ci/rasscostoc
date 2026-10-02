@@ -2,6 +2,7 @@ import { db } from "@server/core/config/db";
 import {
   courierRequests,
   courierExecutions,
+  courierExecutionUnits,
   courierCities,
   courierSimTypes,
   courierVendorTypes,
@@ -29,6 +30,7 @@ import type { ICourierExecutionsRepository } from "../../domain/repositories/ICo
 import type { ICourierPdfRepository } from "../../domain/repositories/ICourierPdfRepository";
 import type { ICourierDashboardReadRepository } from "../../domain/repositories/ICourierDashboardReadRepository";
 import type { ICourierInventoryPort } from "../../domain/repositories/ICourierInventoryPort";
+import type { CourierExecutionUnit } from "../../domain/courier.types";
 import type {
   CourierRequest,
   CourierExecution,
@@ -57,6 +59,23 @@ import {
 import { metrics } from "@core/telemetry/metrics";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
 import { ValidationError, ConflictError, PdfReportAlreadyProcessedError, DuplicateRequestApprovalError } from "@core/errors/AppError";
+
+function toExecutionUnit(row: any): CourierExecutionUnit {
+  return {
+    id: row.id,
+    requestId: row.requestId,
+    executionId: row.executionId,
+    unitNo: row.unitNo,
+    deviceItemId: row.deviceItemId,
+    deviceSerial: row.deviceSerial,
+    simItemId: row.simItemId ?? null,
+    simSerial: row.simSerial ?? null,
+    simWaived: row.simWaived,
+    tid: row.tid ?? null,
+    pairingSource: row.pairingSource,
+    createdAt: row.createdAt ? new Date(row.createdAt) : null,
+  };
+}
 
 export class DrizzleCourierRepository implements
   ICourierRepository,
@@ -109,9 +128,28 @@ export class DrizzleCourierRepository implements
       ...CourierRequestMapper.toDomain(row.request),
       created_by_name: row.createdByName,
       created_by_avatar: row.createdByAvatar,
-      execution: row.execution ? CourierExecutionMapper.toDomain(row.execution) : null,
+      execution: row.execution
+        ? { ...CourierExecutionMapper.toDomain(row.execution), units: await this.findExecutionUnitsByRequestId(id, client) }
+        : null,
       items,
     };
+  }
+
+  async insertExecutionUnits(units: Omit<CourierExecutionUnit, "id" | "createdAt">[], tx?: any): Promise<CourierExecutionUnit[]> {
+    if (units.length === 0) return [];
+    const client = this.getClient(tx);
+    const rows = await client.insert(courierExecutionUnits).values(units).returning();
+    return rows.map(toExecutionUnit);
+  }
+
+  async findExecutionUnitsByRequestId(requestId: number, tx?: any): Promise<CourierExecutionUnit[]> {
+    const client = this.getClient(tx);
+    const rows = await client
+      .select()
+      .from(courierExecutionUnits)
+      .where(eq(courierExecutionUnits.requestId, requestId))
+      .orderBy(courierExecutionUnits.unitNo);
+    return rows.map(toExecutionUnit);
   }
 
   async findRequestByTid(tid: string, tx?: any): Promise<CourierRequest | null> {
