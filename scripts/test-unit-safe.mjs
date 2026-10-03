@@ -155,6 +155,8 @@ const DB_DEPENDENT_TEST_FILES = [
   "apps/api/src/core/tests/concurrency/inventory-scan.idempotency-http.test.ts",
   // Production parity: case-insensitive username lookup is SQL (real Postgres).
   "apps/api/src/modules/identity/infrastructure/database/DrizzleUserRepository.username-lookup.test.ts",
+  // Telegram self-link: real route + PostgreSQL (unique constraint, row lock, audit).
+  "apps/api/src/modules/identity/__integration__/telegram-link.routes.test.ts",
 ];
 
 const args = [

@@ -75,6 +75,8 @@ export class DrizzleUserRepository implements IUserRepository {
         authGeneration: users.authGeneration,
         fcmToken: users.fcmToken,
         telegramUserId: users.telegramUserId,
+        telegramUsername: users.telegramUsername,
+        telegramLinkedAt: users.telegramLinkedAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -100,6 +102,8 @@ export class DrizzleUserRepository implements IUserRepository {
         authGeneration: users.authGeneration,
         fcmToken: users.fcmToken,
         telegramUserId: users.telegramUserId,
+        telegramUsername: users.telegramUsername,
+        telegramLinkedAt: users.telegramLinkedAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -141,6 +145,8 @@ export class DrizzleUserRepository implements IUserRepository {
         authGeneration: users.authGeneration,
         fcmToken: users.fcmToken,
         telegramUserId: users.telegramUserId,
+        telegramUsername: users.telegramUsername,
+        telegramLinkedAt: users.telegramLinkedAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -167,6 +173,8 @@ export class DrizzleUserRepository implements IUserRepository {
         authGeneration: users.authGeneration,
         fcmToken: users.fcmToken,
         telegramUserId: users.telegramUserId,
+        telegramUsername: users.telegramUsername,
+        telegramLinkedAt: users.telegramLinkedAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -217,6 +225,8 @@ export class DrizzleUserRepository implements IUserRepository {
         authGeneration: users.authGeneration,
         fcmToken: users.fcmToken,
         telegramUserId: users.telegramUserId,
+        telegramUsername: users.telegramUsername,
+        telegramLinkedAt: users.telegramLinkedAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       });
@@ -281,6 +291,8 @@ export class DrizzleUserRepository implements IUserRepository {
         authGeneration: users.authGeneration,
         fcmToken: users.fcmToken,
         telegramUserId: users.telegramUserId,
+        telegramUsername: users.telegramUsername,
+        telegramLinkedAt: users.telegramLinkedAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       });
