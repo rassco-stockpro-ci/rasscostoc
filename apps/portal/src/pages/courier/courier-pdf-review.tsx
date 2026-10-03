@@ -30,6 +30,7 @@ import {
   Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 import { buildGoogleDrivePreviewUrl } from "./google-drive-preview";
 
 type MatchStatus = "matched" | "needs_review" | "unknown";
@@ -354,6 +355,13 @@ export default function CourierPdfReviewPage() {
   const [rejectReasonCategory, setRejectReasonCategory] = useState("UNCLEAR_PHOTO");
   const [rejectNotes, setRejectNotes] = useState("");
   const [rejecting, setRejecting] = useState(false);
+
+  // Delete (admin only): removes the report and queues the Drive file + bot hash cleanup,
+  // so the technician can upload the same report again. An applied report cannot be deleted.
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Link SIM Modal State
   const [linkSimModalOpen, setLinkSimModalOpen] = useState(false);
@@ -742,6 +750,32 @@ export default function CourierPdfReviewPage() {
     }
   };
 
+  const handleDeleteConfirm = async () => {
+    if (!report) return;
+    setDeleting(true);
+    try {
+      await apiRequest("DELETE", `/api/courier/pdf/${report.id}`);
+      toast({
+        title: "تم حذف التقرير 🗑️",
+        description: "سيُحذف الملف الأصلي من Google Drive وتُحرَّر بصماته في البوت خلال دقيقة، ثم يمكن للفني رفعه من جديد.",
+      });
+      setDeleteModalOpen(false);
+      queryClient.removeQueries({ queryKey: [`/api/courier/pdf/${id}`] });
+      queryClient.invalidateQueries({
+        predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/courier/pdf"),
+      });
+      navigate("/courier/pdf");
+    } catch (err: any) {
+      toast({
+        title: "تعذر حذف التقرير",
+        description: err.message || "حدث خطأ أثناء الحذف، يرجى المحاولة لاحقاً.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleRejectSubmit = async () => {
     if (!report) return;
     setRejecting(true);
@@ -843,6 +877,17 @@ export default function CourierPdfReviewPage() {
             >
               <XCircle className="w-4 h-4" />
               إرجاع للفني وإرسال إشعار
+            </button>
+          )}
+
+          {isAdmin && !isApplied && (
+            <button
+              onClick={() => setDeleteModalOpen(true)}
+              data-testid="button-delete-pdf-report"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-[#E05252] hover:bg-[#C93F3F] rounded-xl transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              حذف التقرير
             </button>
           )}
         </div>
@@ -1631,6 +1676,49 @@ export default function CourierPdfReviewPage() {
                     <Link2 className="w-4 h-4" />
                   )}
                   تأكيد إضافة وربط الشريحة
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal (admin only) */}
+      <AnimatePresence>
+        {deleteModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-[#E05252]/25 p-6 space-y-4 relative font-sans"
+            >
+              <div className="flex items-center gap-2 text-[#E05252] border-b border-[#F1F5F9] pb-3">
+                <Trash2 className="w-5 h-5" />
+                <h3 className="text-sm font-bold text-[#2D3135]">حذف التقرير رقم {report?.id} نهائياً</h3>
+              </div>
+              <ul className="text-xs text-[#4B5563] leading-relaxed list-disc pr-5 space-y-1">
+                <li>يُحذف التقرير من النظام فوراً ويُسجَّل الحذف في سجل التدقيق.</li>
+                <li>يحذف البوت ملف PDF الأصلي من Google Drive ويحرّر بصماته وبصمات صفحاته.</li>
+                <li>بعدها يستطيع الفني رفع نفس التقرير من جديد عبر البوت.</li>
+                <li className="font-bold text-[#E05252]">لا يمكن التراجع عن هذا الإجراء.</li>
+              </ul>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#F1F5F9]">
+                <button
+                  onClick={() => setDeleteModalOpen(false)}
+                  disabled={deleting}
+                  className="px-4 py-2 text-xs font-bold text-[#6B7280] bg-[#F1F5F9] hover:bg-[#E2E8F0] rounded-xl transition-colors"
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  disabled={deleting}
+                  data-testid="button-confirm-delete-pdf-report"
+                  className="px-4 py-2 text-xs font-bold text-white bg-[#E05252] hover:bg-[#C93F3F] rounded-xl transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  تأكيد الحذف
                 </button>
               </div>
             </motion.div>

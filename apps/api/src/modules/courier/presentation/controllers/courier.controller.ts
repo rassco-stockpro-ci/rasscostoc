@@ -428,6 +428,30 @@ export class CourierController {
     res.json(result);
   });
 
+  deletePdfReport = asyncHandler(async (req: Request, res: Response) => {
+    const user = req.user!;
+    const pdfId = Number(req.params.id);
+    if (!Number.isInteger(pdfId) || pdfId <= 0) throw new ValidationError("Invalid PDF ID");
+
+    const result = await this.service.deletePdfReport(pdfId, user.id);
+    res.json({ success: true, ...result });
+  });
+
+  claimPdfDeletionTask = asyncHandler(async (_req: Request, res: Response) => {
+    const task = await this.service.claimNextPdfDeletionTask();
+    res.json({ success: true, task });
+  });
+
+  completePdfDeletionTask = asyncHandler(async (req: Request, res: Response) => {
+    const taskId = Number(req.params.taskId);
+    if (!Number.isInteger(taskId) || taskId <= 0) throw new ValidationError("Invalid deletion task ID");
+    if (typeof req.body?.success !== "boolean") throw new ValidationError("success (boolean) is required");
+
+    const error = typeof req.body.error === "string" ? req.body.error : undefined;
+    const task = await this.service.completePdfDeletionTask(taskId, req.body.success, error);
+    res.json({ success: true, task });
+  });
+
   getPdfReport = asyncHandler(async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     if (isNaN(id)) throw new ValidationError("Invalid PDF ID");

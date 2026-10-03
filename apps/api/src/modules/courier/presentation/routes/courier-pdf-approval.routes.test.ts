@@ -47,6 +47,7 @@ vi.mock("@core/middlewares/auth.middleware", () => {
     },
     requireAdmin: (_req: any, _res: any, next: any) => next(),
     requireSupervisor: (_req: any, _res: any, next: any) => next(),
+    requireInternalService: (_req: any, _res: any, next: any) => next(),
   };
 });
 

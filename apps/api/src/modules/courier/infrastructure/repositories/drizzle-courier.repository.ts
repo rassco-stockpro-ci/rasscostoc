@@ -9,6 +9,7 @@ import {
   courierFailureReasons,
   courierAuditLogs,
   courierPdfReports,
+  courierPdfDeletionTasks,
   users,
   employeeProfiles,
   courierRequestItems,
@@ -23,11 +24,11 @@ import {
   technicianFixedInventoryEntries,
   inventoryDeductionCompletions,
 } from "@shared/schema";
-import { eq, and, or, sql, desc, count, inArray, ilike } from "drizzle-orm";
+import { eq, and, or, sql, desc, count, inArray, ilike, lt } from "drizzle-orm";
 import type { ICourierRepository } from "../../domain/repositories/courier.repository.interface";
 import type { ICourierRequestsRepository } from "../../domain/repositories/ICourierRequestsRepository";
 import type { ICourierExecutionsRepository } from "../../domain/repositories/ICourierExecutionsRepository";
-import type { ICourierPdfRepository } from "../../domain/repositories/ICourierPdfRepository";
+import type { ICourierPdfRepository, CourierPdfDeletionTask } from "../../domain/repositories/ICourierPdfRepository";
 import type { ICourierDashboardReadRepository } from "../../domain/repositories/ICourierDashboardReadRepository";
 import type { ICourierInventoryPort } from "../../domain/repositories/ICourierInventoryPort";
 import type { CourierExecutionUnit } from "../../domain/courier.types";
@@ -1228,6 +1229,116 @@ export class DrizzleCourierRepository implements
       .where(and(eq(courierPdfReports.id, pdfId), eq(courierPdfReports.status, expectedStatus)))
       .returning();
     return row ? CourierPdfReportMapper.toDomain(row) : null;
+  }
+
+  /**
+   * Row lock for the delete flow (DELETE /api/courier/pdf/:id): `SELECT ...
+   * FOR UPDATE` on courier_pdf_reports ONLY (no joins, so no other table's
+   * rows are locked) blocks until any concurrent apply/reject CAS on the
+   * same id has committed, so delete always sees the post-commit status —
+   * never a stale "pending" a moment before it flips to "applied".
+   */
+  async lockPdfReportById(id: number): Promise<CourierPdfReport | null> {
+    const client = this.getClient();
+    const [row] = await client
+      .select()
+      .from(courierPdfReports)
+      .where(eq(courierPdfReports.id, id))
+      .for("update");
+    return row ? CourierPdfReportMapper.toDomain(row) : null;
+  }
+
+  /** Hard delete — courier_pdf_reports has no incoming foreign keys. */
+  async deletePdfReportRow(id: number): Promise<void> {
+    const client = this.getClient();
+    await client.delete(courierPdfReports).where(eq(courierPdfReports.id, id));
+  }
+
+  async insertPdfDeletionTask(data: {
+    reportId: number;
+    driveUrl: string | null;
+    fileName: string | null;
+    requestedBy: string;
+  }): Promise<CourierPdfDeletionTask> {
+    const client = this.getClient();
+    const [row] = await client
+      .insert(courierPdfDeletionTasks)
+      .values({
+        reportId: data.reportId,
+        driveUrl: data.driveUrl,
+        fileName: data.fileName,
+        requestedBy: data.requestedBy,
+      })
+      .returning();
+    return row as unknown as CourierPdfDeletionTask;
+  }
+
+  /**
+   * Same SELECT ... FOR UPDATE SKIP LOCKED + UPDATE idiom as
+   * jobs.repository.ts#claimNextJob — needs its own `db.transaction`
+   * (not `this.getClient()`/`this.tx`) because this is called standalone
+   * by the bot-facing claim endpoint, never from inside `uow.execute`,
+   * and the lock from SKIP LOCKED only holds for the lifetime of one
+   * transaction.
+   */
+  async claimNextPdfDeletionTask(): Promise<CourierPdfDeletionTask | null> {
+    return await db.transaction(async (tx) => {
+      const [eligible] = await tx
+        .select()
+        .from(courierPdfDeletionTasks)
+        .where(
+          and(
+            lt(courierPdfDeletionTasks.attempts, 5),
+            or(
+              eq(courierPdfDeletionTasks.status, "PENDING"),
+              and(eq(courierPdfDeletionTasks.status, "CLAIMED"), lt(courierPdfDeletionTasks.leasedUntil, new Date()))
+            )
+          )
+        )
+        .orderBy(courierPdfDeletionTasks.id)
+        .limit(1)
+        .for("update", { skipLocked: true });
+
+      if (!eligible) return null;
+
+      const [row] = await tx
+        .update(courierPdfDeletionTasks)
+        .set({
+          status: "CLAIMED",
+          attempts: (eligible as any).attempts + 1,
+          leasedUntil: new Date(Date.now() + 5 * 60 * 1000),
+        })
+        .where(eq(courierPdfDeletionTasks.id, (eligible as any).id))
+        .returning();
+      return row ? (row as unknown as CourierPdfDeletionTask) : null;
+    });
+  }
+
+  async completePdfDeletionTask(id: number, success: boolean, error?: string): Promise<CourierPdfDeletionTask | null> {
+    const client = this.getClient();
+    if (success) {
+      const [row] = await client
+        .update(courierPdfDeletionTasks)
+        .set({ status: "DONE", completedAt: new Date(), lastError: null })
+        .where(eq(courierPdfDeletionTasks.id, id))
+        .returning();
+      return row ? (row as unknown as CourierPdfDeletionTask) : null;
+    }
+
+    const [current] = await client
+      .select()
+      .from(courierPdfDeletionTasks)
+      .where(eq(courierPdfDeletionTasks.id, id))
+      .limit(1);
+    if (!current) return null;
+
+    const nextStatus = (current as any).attempts >= 5 ? "FAILED" : "PENDING";
+    const [row] = await client
+      .update(courierPdfDeletionTasks)
+      .set({ status: nextStatus, lastError: error || null, leasedUntil: null })
+      .where(eq(courierPdfDeletionTasks.id, id))
+      .returning();
+    return row ? (row as unknown as CourierPdfDeletionTask) : null;
   }
 
   /**
