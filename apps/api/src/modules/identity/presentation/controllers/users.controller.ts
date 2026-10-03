@@ -12,7 +12,7 @@ import { getDatabase } from "@core/database/connection";
 import { ROLES, isAdmin, isSupervisor } from "@shared/roles";
 
 /** PLATFORM-P0 — minimum necessary public user fields with profileImage & extraProfile */
-function toMinimalUserView(user: any) {
+export function toMinimalUserView(user: any) {
   let extraProfile = null;
   if (user.permissions) {
     try {
@@ -35,6 +35,10 @@ function toMinimalUserView(user: any) {
     city: user.city ?? null,
     email: user.email ?? null,
     telegramUserId: user.telegramUserId ?? null,
+    telegramUsername: user.telegramUsername ?? null,
+    telegramLinked: !!user.telegramUserId,
+    telegramLinkedAt: user.telegramLinkedAt ?? null,
+    telegramLastSeenAt: user.telegramLastSeenAt ?? null,
     extraProfile,
     createdAt: user.createdAt ?? null,
     updatedAt: user.updatedAt ?? null,

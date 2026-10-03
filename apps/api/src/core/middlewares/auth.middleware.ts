@@ -10,7 +10,7 @@ import * as jwt from "@server/utils/jwt";
 import { JWT_SECRET } from "@core/config/jwt.config";
 import { getDatabase } from "@core/database/connection";
 import { users } from "@shared/schema";
-import { eq, or } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 
 // Extend Express Request type to include full user context
 declare global {
@@ -354,6 +354,19 @@ export function requireAdmin(
 }
 
 /**
+ * "Last used through Telegram": one UPDATE at most per minute per user, fire-and-forget. A failure here
+ * is logged and ignored — it must never fail or slow the bot's request.
+ */
+function stampTelegramLastSeen(userId: string): void {
+  void getDatabase()
+    .execute(
+      sql`UPDATE users SET telegram_last_seen_at = now()
+          WHERE id = ${userId} AND (telegram_last_seen_at IS NULL OR telegram_last_seen_at < now() - interval '1 minute')`
+    )
+    .catch((err) => console.warn("telegram last-seen stamp failed:", err instanceof Error ? err.message : err));
+}
+
+/**
  * Internal service key ONLY (X-Internal-Service-Key) — no user session, no Telegram identity.
  * For endpoints the installation bot calls before the Telegram account is linked to anyone
  * (e.g. POST /api/telegram/link). Constant-time comparison.
@@ -464,6 +477,7 @@ export async function requireAuthOrInternal(
         technicianCode: row.technicianCode ?? null,
         permissions: row.permissions ? JSON.parse(row.permissions) : [],
       };
+      stampTelegramLastSeen(row.id);
       return next();
     }
 

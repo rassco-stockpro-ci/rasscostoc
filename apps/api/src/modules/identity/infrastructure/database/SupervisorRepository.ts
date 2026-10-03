@@ -52,6 +52,7 @@ export class SupervisorRepository implements ISupervisorRepository {
         telegramUserId: users.telegramUserId,
         telegramUsername: users.telegramUsername,
         telegramLinkedAt: users.telegramLinkedAt,
+        telegramLastSeenAt: users.telegramLastSeenAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })

@@ -34,6 +34,8 @@ export const users = pgTable("users", {
   // NULL for accounts an admin linked before 0064 (their link date is unknown and is not invented).
   telegramUsername: text("telegram_username"),
   telegramLinkedAt: timestamp("telegram_linked_at"),
+  // Last time the bot successfully acted for this user (throttled to one write per minute).
+  telegramLastSeenAt: timestamp("telegram_last_seen_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

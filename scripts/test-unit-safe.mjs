@@ -157,6 +157,8 @@ const DB_DEPENDENT_TEST_FILES = [
   "apps/api/src/modules/identity/infrastructure/database/DrizzleUserRepository.username-lookup.test.ts",
   // Telegram self-link: real route + PostgreSQL (unique constraint, row lock, audit).
   "apps/api/src/modules/identity/__integration__/telegram-link.routes.test.ts",
+  "apps/api/src/modules/identity/__integration__/telegram-last-seen.test.ts",
+  "apps/api/src/modules/inventory/__integration__/technicians-telegram-fields.test.ts",
 ];
 
 const args = [

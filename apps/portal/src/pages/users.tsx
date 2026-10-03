@@ -10,6 +10,7 @@ import { Search, Plus, Edit, Trash2, Users as UsersIcon, Home, ArrowRight, Spark
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import type { UserSafe } from "@shared/schema";
+import { TelegramLinkStatus } from "@/components/telegram-link-status";
 import { ROLE_BADGE_VARIANTS, getRoleLabel } from "@shared/roles";
 import { useToast } from "@/hooks/use-toast";
 import { AddUserModal } from "@/components/add-user-modal";
@@ -438,6 +439,8 @@ export default function UsersPage() {
                         )}
                       </div>
                     </div>
+
+                    {user.telegramUserId && <TelegramLinkStatus user={user as any} />}
 
                     {/* Enterprise Details */}
                     {(user.employeeCode || user.technicianCode || user.department) && (

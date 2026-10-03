@@ -373,6 +373,7 @@ export class MemStorage implements IStorage {
       telegramUserId: insertUser.telegramUserId ?? null,
       telegramUsername: null,
       telegramLinkedAt: null,
+      telegramLastSeenAt: null,
       // OPS-PERM-S0-B1-C.I2A.I0.C1.E2: new in-memory user, so it starts at
       // generation 0 (same convention as the real DB default for new rows).
       authGeneration: 0,

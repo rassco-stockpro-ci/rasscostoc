@@ -77,6 +77,7 @@ export class DrizzleUserRepository implements IUserRepository {
         telegramUserId: users.telegramUserId,
         telegramUsername: users.telegramUsername,
         telegramLinkedAt: users.telegramLinkedAt,
+        telegramLastSeenAt: users.telegramLastSeenAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -104,6 +105,7 @@ export class DrizzleUserRepository implements IUserRepository {
         telegramUserId: users.telegramUserId,
         telegramUsername: users.telegramUsername,
         telegramLinkedAt: users.telegramLinkedAt,
+        telegramLastSeenAt: users.telegramLastSeenAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -147,6 +149,7 @@ export class DrizzleUserRepository implements IUserRepository {
         telegramUserId: users.telegramUserId,
         telegramUsername: users.telegramUsername,
         telegramLinkedAt: users.telegramLinkedAt,
+        telegramLastSeenAt: users.telegramLastSeenAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -175,6 +178,7 @@ export class DrizzleUserRepository implements IUserRepository {
         telegramUserId: users.telegramUserId,
         telegramUsername: users.telegramUsername,
         telegramLinkedAt: users.telegramLinkedAt,
+        telegramLastSeenAt: users.telegramLastSeenAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -227,6 +231,7 @@ export class DrizzleUserRepository implements IUserRepository {
         telegramUserId: users.telegramUserId,
         telegramUsername: users.telegramUsername,
         telegramLinkedAt: users.telegramLinkedAt,
+        telegramLastSeenAt: users.telegramLastSeenAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       });
@@ -293,6 +298,7 @@ export class DrizzleUserRepository implements IUserRepository {
         telegramUserId: users.telegramUserId,
         telegramUsername: users.telegramUsername,
         telegramLinkedAt: users.telegramLinkedAt,
+        telegramLastSeenAt: users.telegramLastSeenAt,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       });
