@@ -171,6 +171,23 @@ export class DuplicateRequestApprovalError extends AppError {
   }
 }
 
+/**
+ * CloseReportIdentityGuard: thrown when a PDF-report completion (completePdfReport,
+ * POST /api/courier/pdf/:id/complete) is refused before any write because the report's claimed
+ * customer name or request number does not match the request actually being closed. `code`
+ * identifies exactly which check failed, so the client (and tests) never have to parse `message`.
+ *
+ * Deliberately NOT a date/time check: RASSCO has no trusted source for the installation/visit
+ * date or time (see receipt-datetime-extraction.ts and CloseReportIdentityGuard) — that match
+ * status is UNVERIFIED, not enforced, and this error is never thrown for it.
+ */
+export class ReportIdentityMismatchError extends AppError {
+  constructor(code: "CUSTOMER_MISMATCH" | "REQUEST_NUMBER_MISMATCH", message: string) {
+    super(message, 422, true, code);
+    this.name = "ReportIdentityMismatchError";
+  }
+}
+
 export class OptimisticLockException extends ConflictError {
   public readonly tableName: string;
   public readonly recordId: string | number;

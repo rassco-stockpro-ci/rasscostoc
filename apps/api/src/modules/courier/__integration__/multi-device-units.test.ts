@@ -366,7 +366,7 @@ describe("Multi-Device / Multi-SIM installation units (HTTP + PostgreSQL)", () =
     const tech = await seedTech("pdf");
     const set = await seedUnits(tech.id, 3);
     const requestId = await seedRequest();
-    const [pdf] = await db.insert(courierPdfReports).values({ requestId, fileName: "r.pdf", filePath: `/tmp/${randomUUID()}.pdf`, uploadedBy: tech.id, status: "pending" }).returning();
+    const [pdf] = await db.insert(courierPdfReports).values({ requestId, fileName: "r.pdf", filePath: `/tmp/${randomUUID()}.pdf`, uploadedBy: tech.id, status: "pending", extractedJson: JSON.stringify({ retailer_name: { value: "MD" }, request_number: { value: String(requestId) } }) }).returning();
     const res = await request(app).post(`/api/courier/pdf/${pdf!.id}/complete`).send({
       request_id: requestId,
       devices: set.map((u, i) => ({ sn: u.device, sim_serial: u.sim, tid: `TID-${i + 1}`, technician_code: tech.username })),

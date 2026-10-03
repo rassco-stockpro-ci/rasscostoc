@@ -11,6 +11,8 @@ import {
 } from "./ai-engine/courier-pdf-extraction.adapter";
 import { parseRawDataWorkbook, buildExportWorkbook } from "./excel.helper";
 import { CompletionGuard, GuardValidationError, isCompletedStatus } from "./guards/CompletionGuard";
+import { CloseReportIdentityGuard } from "./guards/CloseReportIdentityGuard";
+import { extractReceiptFacts } from "./receipt-datetime-extraction";
 import { explicitPairingRequired, serialListsOf, unitsFromLegacyLists, unitsFromPayload, unitsFromPdfDevices } from "./close/close-units";
 import type { CloseUnitsPlan } from "../domain/execution-unit";
 import { normalizeSerialList } from "./guards/guard.types";
@@ -1646,6 +1648,18 @@ export class CourierService {
     } else {
       sanitized.sn = units.units[0]!.deviceSerial;
       sanitized.simSerial = units.units[0]!.simSerial;
+
+      // Report-identity gate (new): does this report's claimed customer/request number
+      // actually match the request being closed? Runs before the custody guard and before
+      // any write, so a rejection here never touches inventory, custody or the pdf_reports
+      // row (it writes exactly one audit row on rejection, same contract as CustodyGuard's
+      // own writeAuditFailure). Deliberately does NOT check receipt date/time — RASSCO has
+      // no trusted source for the installation/visit date or time; see CloseReportIdentityGuard.
+      await CloseReportIdentityGuard.assert(extractReceiptFacts(report.extractedJson), request, {
+        requestId,
+        enteredBy,
+        dashboardRepo: this.dashboardRepo,
+      });
     }
 
     const decision = await CompletionGuard.run({
