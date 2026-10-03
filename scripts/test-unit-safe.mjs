@@ -65,6 +65,7 @@ const DB_DEPENDENT_TEST_FILES = [
   "apps/api/src/modules/courier/__integration__/multi-device-units.test.ts",
   "apps/api/src/modules/courier/__integration__/telegram-bot-e2e.test.ts",
   "apps/api/src/modules/courier/__integration__/sim-type-from-inventory.test.ts",
+  "apps/api/src/modules/courier/__integration__/pdf-report-delete.test.ts",
   "apps/api/src/modules/courier/infrastructure/pdf-report-approval-transaction.test.ts",
   "apps/api/src/modules/courier/presentation/routes/courier-pdf-approval.routes.test.ts",
   "apps/api/src/modules/courier/infrastructure/migration-p1-expand.smoke.test.ts",

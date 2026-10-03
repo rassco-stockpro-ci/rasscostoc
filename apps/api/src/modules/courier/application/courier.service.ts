@@ -1882,6 +1882,74 @@ export class CourierService {
     return { id: pdfId, status: "rejected", reasonCategory, notes };
   }
 
+  /**
+   * Deletes an uploaded PDF report so the technician can upload it again.
+   * Admin-only at the route. A report that has been approved and applied
+   * (status "applied") can never be deleted — the request it closed and
+   * the custody it deducted stay as they are. Everything else (pending,
+   * rejected, manual_review) is deleted.
+   *
+   * The row is removed here, in one transaction with its audit entry and a
+   * courier_pdf_deletion_tasks row. The Drive file and the installation
+   * bot's dedupe hashes are removed later by the bot (the backend holds no
+   * Google credentials), which claims the task through the internal
+   * endpoints below.
+   */
+  async deletePdfReport(pdfId: number, actorId: string): Promise<{ id: number; status: "deleted"; deletionTaskId: number }> {
+    return this.uow.execute(async (ctx) => {
+      const report = await ctx.pdfRepository.lockPdfReportById(pdfId);
+      if (!report) {
+        throw new NotFoundError("PDF Report not found");
+      }
+      if (report.status === "applied") {
+        throw new AppError(
+          `لا يمكن حذف التقرير رقم ${pdfId}: معتمد ومُطبَّق (تم إغلاق الطلب به).`,
+          409,
+          true,
+          "PDF_REPORT_APPLIED_CANNOT_DELETE"
+        );
+      }
+
+      const task = await ctx.pdfRepository.insertPdfDeletionTask({
+        reportId: pdfId,
+        driveUrl: report.filePath || null,
+        fileName: report.fileName || null,
+        requestedBy: actorId,
+      });
+      await ctx.pdfRepository.deletePdfReportRow(pdfId);
+      await ctx.dashboardRepository.insertAuditLog({
+        tableName: "pdf_reports",
+        recordId: pdfId,
+        action: "delete",
+        oldValue: report.status,
+        changedBy: actorId,
+        actionDescription: "حذف تقرير PDF مرفوع (لإعادة رفعه)",
+        metadata: {
+          fileName: report.fileName,
+          driveUrl: report.filePath,
+          requestId: report.requestId,
+          deletionTaskId: task.id,
+        },
+      });
+
+      return { id: pdfId, status: "deleted" as const, deletionTaskId: task.id };
+    });
+  }
+
+  /** Bot (internal service key): next Drive/hash cleanup to perform, or null. */
+  async claimNextPdfDeletionTask() {
+    return this.pdfRepo.claimNextPdfDeletionTask();
+  }
+
+  /** Bot (internal service key): outcome of a claimed cleanup. */
+  async completePdfDeletionTask(taskId: number, success: boolean, error?: string) {
+    const task = await this.pdfRepo.completePdfDeletionTask(taskId, success, error ? error.slice(0, 1000) : undefined);
+    if (!task) {
+      throw new NotFoundError("PDF deletion task not found");
+    }
+    return task;
+  }
+
   private async notifyTelegramUser(userId: string, htmlMessage: string, replyToMessageId?: number): Promise<void> {
     try {
       const botToken = process.env.TELEGRAM_BOT_TOKEN;

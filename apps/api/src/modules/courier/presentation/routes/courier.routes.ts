@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import path from "path";
 import { bootstrapCourierModule } from "../../composition/courier.container";
-import { requireAuth, requireAuthOrInternal, requireAdmin } from "@core/middlewares/auth.middleware";
+import { requireAuth, requireAuthOrInternal, requireAdmin, requireInternalService } from "@core/middlewares/auth.middleware";
 import { requireCatalogedPermission } from "@core/middlewares/requireCatalogedPermission.middleware";
 import {
   createExcelUpload,
@@ -113,6 +113,19 @@ export function registerCourierRoutes(app: Express): void {
   // PDF Upload & Application
   app.get("/api/courier/pdf", requireAuth, controller.getPdfReports);
   app.get("/api/courier/pdf/:id", requireAuth, controller.getPdfReport);
+
+  // Delete an uploaded report so it can be uploaded again (admin only; an
+  // applied report is refused with 409). The Drive file and the bot's dedupe
+  // hashes are cleaned up by the bot via the two internal-key-only routes
+  // below (the backend has no Google credentials).
+  app.delete("/api/courier/pdf/:id", requireAuth, requireAdmin, controller.deletePdfReport);
+  app.post("/api/courier/pdf/deletion-tasks/claim", requireInternalService, controller.claimPdfDeletionTask);
+  app.post(
+    "/api/courier/pdf/deletion-tasks/:taskId/complete",
+    requireJsonContentType,
+    requireInternalService,
+    controller.completePdfDeletionTask,
+  );
 
   // register-drive و complete فقط يقبلان مفتاح الخدمة الداخلي (بوت تيليجرام) -
   // باقي مسارات courier/pdf (المراجعة، apply، reextract) تبقى للواجهة البشرية

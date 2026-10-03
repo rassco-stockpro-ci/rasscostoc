@@ -253,6 +253,29 @@ export const courierPdfReports = pgTable("courier_pdf_reports", {
   status: text("status").notNull().default("pending"),
 });
 
+// 7b. PDF Report Deletion Tasks - see migrations/0065_courier_pdf_deletion_tasks_add.sql.
+// No FK to courierPdfReports.id: the report row this task was created for is deleted in the
+// same transaction that inserts this row (see CourierService.deletePdfReport).
+export const courierPdfDeletionTasks = pgTable("courier_pdf_deletion_tasks", {
+  id: serial("id").primaryKey(),
+  reportId: integer("report_id").notNull(),
+  driveUrl: text("drive_url"),
+  fileName: text("file_name"),
+  requestedBy: varchar("requested_by").references(() => users.id),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  status: text("status").notNull().default("PENDING"),
+  attempts: integer("attempts").notNull().default(0),
+  leasedUntil: timestamp("leased_until"),
+  completedAt: timestamp("completed_at"),
+  lastError: text("last_error"),
+}, (table) => ({
+  statusIdx: index("courier_pdf_deletion_tasks_status_idx").on(table.status),
+  statusCheck: check(
+    "courier_pdf_deletion_tasks_status_check",
+    sql`${table.status} IN ('PENDING', 'CLAIMED', 'DONE', 'FAILED')`
+  ),
+}));
+
 // 8. Courier Audit Logs
 export const courierAuditLogs = pgTable("courier_audit_logs", {
   id: serial("id").primaryKey(),
@@ -403,6 +426,7 @@ export type CourierRequest = typeof courierRequests.$inferSelect;
 export type CourierRequestItem = typeof courierRequestItems.$inferSelect;
 export type CourierExecution = typeof courierExecutions.$inferSelect;
 export type CourierPdfReport = typeof courierPdfReports.$inferSelect;
+export type CourierPdfDeletionTask = typeof courierPdfDeletionTasks.$inferSelect;
 export type CourierAuditLog = typeof courierAuditLogs.$inferSelect;
 export type OutboxEvent = typeof outboxEvents.$inferSelect;
 export type NewOutboxEvent = typeof outboxEvents.$inferInsert;

@@ -36,6 +36,7 @@ vi.mock("@core/middlewares/auth.middleware", () => ({
   requireAuthOrInternal: (req: any, _res: any, next: any) => ((req.user = currentUser), next()),
   requireAdmin: (_req: any, _res: any, next: any) => next(),
   requireSupervisor: (_req: any, _res: any, next: any) => next(),
+  requireInternalService: (_req: any, _res: any, next: any) => next(),
 }));
 
 const COMPLETED = "Installation Completed - NL";
