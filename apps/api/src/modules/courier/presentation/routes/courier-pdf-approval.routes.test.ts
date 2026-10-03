@@ -135,7 +135,16 @@ describe("OPS-REMED-E12 — real HTTP PDF approval/rejection conflict responses"
     return row.id;
   }
 
-  async function seedPdfReport(requestId: number, uploadedBy: string) {
+  /**
+   * CLOSE REPORT-IDENTITY GATE (new): completePdfReport now requires the report's extracted
+   * customer name and request number to match the request being closed. extractedJson here
+   * mirrors the matched request exactly (same contract as update_rassco_extracted_json), so this
+   * file keeps exercising its own OPS-REMED-E12 conflict-response assertions, not the new gate.
+   * customerName is passed in by the caller (the exact string seedRequest just inserted) rather
+   * than read back with `.where(eq(...))` — drizzle-orm operators are forbidden in this file's
+   * directory (presentation/routes/), see the file header comment above.
+   */
+  async function seedPdfReport(requestId: number, uploadedBy: string, customerName: string) {
     const [row] = await db
       .insert(courierPdfReports)
       .values({
@@ -144,6 +153,10 @@ describe("OPS-REMED-E12 — real HTTP PDF approval/rejection conflict responses"
         filePath: `/tmp/${randomUUID()}.pdf`,
         uploadedBy,
         status: "pending",
+        extractedJson: JSON.stringify({
+          retailer_name: { value: customerName, confidence: 95, source: "ai_engine" },
+          request_number: { value: String(requestId), confidence: 95, source: "ai_engine" },
+        }),
       })
       .returning();
     return row.id;
@@ -156,7 +169,7 @@ describe("OPS-REMED-E12 — real HTTP PDF approval/rejection conflict responses"
       const serial = testSerial("E12HTTPOK");
       await seedDeviceInCustody(actor.id, serial);
       const requestId = await seedRequest("complete");
-      const pdfId = await seedPdfReport(requestId, actor.id);
+      const pdfId = await seedPdfReport(requestId, actor.id, "E12 HTTP Customer complete");
 
       const body = {
         request_id: requestId,
@@ -188,7 +201,7 @@ describe("OPS-REMED-E12 — real HTTP PDF approval/rejection conflict responses"
     async () => {
       const actor = await seedActingUser();
       const requestId = await seedRequest("reject");
-      const pdfId = await seedPdfReport(requestId, actor.id);
+      const pdfId = await seedPdfReport(requestId, actor.id, "E12 HTTP Customer reject");
 
       const [resA, resB] = await Promise.all([
         request(app).post(`/api/courier/pdf/${pdfId}/reject`).send({ reasonCategory: "OTHER", notes: "x" }),

@@ -165,7 +165,23 @@ describe("OPS-REMED-E12 — atomic PDF-report approval/rejection transaction", (
     return row.id;
   }
 
+  /**
+   * CLOSE REPORT-IDENTITY GATE (new): completePdfReport now requires the report's extracted
+   * customer name and request number to match the request being closed — a report with neither
+   * is otherwise rejected with 422 before this file's atomicity/concurrency assertions are even
+   * reached. extractedJson here mirrors the matched request exactly (same contract as
+   * update_rassco_extracted_json: retailer_name <- the request's own customer name, request_number
+   * <- its id), so these tests keep exercising atomicity/concurrency, not the new gate.
+   */
   async function seedPdfReport(requestId: number | null, uploadedBy: string, status = "pending") {
+    let extractedJson: string | null = null;
+    if (requestId != null) {
+      const [req] = await db.select().from(courierRequests).where(eq(courierRequests.id, requestId)).limit(1);
+      extractedJson = JSON.stringify({
+        retailer_name: { value: req?.customerName ?? null, confidence: 95, source: "ai_engine" },
+        request_number: { value: String(requestId), confidence: 95, source: "ai_engine" },
+      });
+    }
     const [row] = await db
       .insert(courierPdfReports)
       .values({
@@ -174,6 +190,7 @@ describe("OPS-REMED-E12 — atomic PDF-report approval/rejection transaction", (
         filePath: `/tmp/${randomUUID()}.pdf`,
         uploadedBy,
         status,
+        extractedJson,
       })
       .returning();
     createdPdfIds.push(row.id);

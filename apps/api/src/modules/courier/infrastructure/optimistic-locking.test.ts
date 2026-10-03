@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
+import { randomUUID } from "crypto";
 import { db } from "../../../core/config/db";
 import { courierRequests, courierExecutions, users } from "@shared/schema";
 import { createInventoryEngine } from "../composition/courier.container";
@@ -17,10 +18,6 @@ describe("Courier Optimistic Locking Integration Tests", () => {
   let userId: string;
 
   beforeEach(async () => {
-    // Clear executions and requests before each test to start clean
-    await db.delete(courierExecutions);
-    await db.delete(courierRequests);
-
     // Create a test user to satisfy foreign key constraints
     const testUsername = "locking_test_user";
     const [existingUser] = await db
@@ -54,7 +51,7 @@ describe("Courier Optimistic Locking Integration Tests", () => {
         .insert(courierRequests)
         .values({
           customerName: "Initial Customer",
-          incidentNumber: "INC-101",
+          incidentNumber: `INC-101-${randomUUID().slice(0, 8)}`,
           createdBy: userId,
         })
         .returning();
@@ -82,7 +79,7 @@ describe("Courier Optimistic Locking Integration Tests", () => {
         .insert(courierRequests)
         .values({
           customerName: "Concurrent Customer",
-          incidentNumber: "INC-102",
+          incidentNumber: `INC-102-${randomUUID().slice(0, 8)}`,
           createdBy: userId,
         })
         .returning();
@@ -123,7 +120,7 @@ describe("Courier Optimistic Locking Integration Tests", () => {
         .insert(courierRequests)
         .values({
           customerName: "Recovery Customer",
-          incidentNumber: "INC-103",
+          incidentNumber: `INC-103-${randomUUID().slice(0, 8)}`,
           createdBy: userId,
         })
         .returning();
@@ -183,7 +180,7 @@ describe("Courier Optimistic Locking Integration Tests", () => {
         .insert(courierRequests)
         .values({
           customerName: "Execution Customer",
-          incidentNumber: "INC-201",
+          incidentNumber: `INC-201-${randomUUID().slice(0, 8)}`,
           createdBy: userId,
         })
         .returning();
@@ -218,7 +215,7 @@ describe("Courier Optimistic Locking Integration Tests", () => {
         .insert(courierRequests)
         .values({
           customerName: "Execution Concurrent",
-          incidentNumber: "INC-202",
+          incidentNumber: `INC-202-${randomUUID().slice(0, 8)}`,
           createdBy: userId,
         })
         .returning();
