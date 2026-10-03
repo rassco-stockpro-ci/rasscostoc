@@ -449,6 +449,13 @@
       "when": 1787840004000,
       "tag": "0063_runtime_dependency_reconcile",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1787840005000,
+      "tag": "0064_users_telegram_link_metadata_add",
+      "breakpoints": true
     }
   ]
 }

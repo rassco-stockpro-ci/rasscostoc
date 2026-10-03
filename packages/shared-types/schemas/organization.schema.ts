@@ -30,6 +30,12 @@ export const users = pgTable("users", {
   // ربط حساب الفني برقم مستخدمه في تيليجرام (بوت توثيق التركيب) - يُستخدم لتحديد هوية
   // الفني الفعلي عند رفع تقارير courier/pdf عبر البوت بدل حساب خدمة عام واحد.
   telegramUserId: text("telegram_user_id").unique(),
+  // Recorded by the bot's self-link flow (POST /api/telegram/link): the Telegram @username seen at link time and when it was linked.
+  // NULL for accounts an admin linked before 0064 (their link date is unknown and is not invented).
+  telegramUsername: text("telegram_username"),
+  telegramLinkedAt: timestamp("telegram_linked_at"),
+  // Last time the bot successfully acted for this user (throttled to one write per minute).
+  telegramLastSeenAt: timestamp("telegram_last_seen_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
