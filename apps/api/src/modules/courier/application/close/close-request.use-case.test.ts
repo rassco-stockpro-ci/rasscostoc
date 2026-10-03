@@ -55,7 +55,7 @@ const CLOSE_ITEMS = [
 ];
 
 const UNITS = [
-  { unitNo: 1, device: { itemId: "dev-a", serialNumber: "DEV-A" }, sim: { itemId: "sim-a", serialNumber: "SIM-A" }, simWaived: false, tid: "T1" },
+  { unitNo: 1, device: { itemId: "dev-a", serialNumber: "DEV-A" }, sim: { itemId: "sim-a", serialNumber: "SIM-A", carrierName: "STC" }, simWaived: false, tid: "T1" },
 ];
 
 const event = (execution: any = { id: 9, paperRollQty: 2 }) =>
@@ -84,6 +84,8 @@ describe("CloseRequestUseCase — the close transaction contract", () => {
     await h.useCase.commit(h.ctx, plan, ev);
 
     expect(h.calls).toEqual(["bind", "units", "install:1", "install:1001", "deduct", "closed", "audit", "enqueue"]);
+    // the persisted units carry the SIM type derived from inventory (event payload + response)
+    expect((ev.payload.execution as any).units.map((u: any) => u.simType)).toEqual(["STC"]);
     // each installed request item points at its unit
     expect(h.rows.find((r) => r.id === 1)!.executionUnitId).toBe(500);
     expect(h.ctx.executionsRepository.insertExecutionUnits.mock.calls[0][0][0]).toMatchObject({

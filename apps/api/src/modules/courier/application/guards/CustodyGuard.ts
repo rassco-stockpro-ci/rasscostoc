@@ -30,6 +30,8 @@ import {
   CloseUnitError,
   ROLE_CATEGORY,
   assertResolvedUnits,
+  assertSimTypes,
+  primarySimType,
   type CloseUnitsPlan,
   type PairingSource,
   type ResolvedCloseUnit,
@@ -64,12 +66,14 @@ export interface UnitCountWarning {
 export interface CustodyDecision {
   items: CloseItem[];
   units: ResolvedCloseUnit[];
+  /** SIM type of unit 1's SIM, from inventory (what the execution row records); null when none / unnamed. */
+  primarySimType: string | null;
   pairingSource: PairingSource | null;
   countWarning: UnitCountWarning | null;
   requestItemsToBind: RequestItemBinding[];
 }
 
-const EMPTY: CustodyDecision = { items: [], units: [], pairingSource: null, countWarning: null, requestItemsToBind: [] };
+const EMPTY: CustodyDecision = { items: [], units: [], primarySimType: null, pairingSource: null, countWarning: null, requestItemsToBind: [] };
 
 export class CustodyGuard {
   /**
@@ -113,14 +117,25 @@ export class CustodyGuard {
         );
       }
       if (item.currentOwnerId) ownerIds.add(item.currentOwnerId);
-      return { itemId: item.id as string, serialNumber: item.serialNumber as string };
+      // A SIM's type is the carrier of its inventory item type — never the client's word.
+      const carrierName =
+        role === "sim"
+          ? SerialRecognitionService.resolveCarrierName(itemType.id, itemType.nameEn ?? "", itemType.nameAr ?? "")
+          : null;
+      return { itemId: item.id as string, serialNumber: item.serialNumber as string, carrierName };
     };
 
     const units: ResolvedCloseUnit[] = [];
     for (const u of plan.units) {
       const device = await resolve(u.deviceSerial, "device", u.unitNo);
       const sim = u.simSerial ? await resolve(u.simSerial, "sim", u.unitNo) : null;
-      units.push({ unitNo: u.unitNo, device, sim, simWaived: u.simWaived, tid: u.tid });
+      units.push({
+        unitNo: u.unitNo,
+        device: { itemId: device.itemId, serialNumber: device.serialNumber },
+        sim,
+        simWaived: u.simWaived,
+        tid: u.tid,
+      });
     }
 
     if (ownerIds.size > 1) {
@@ -131,6 +146,7 @@ export class CustodyGuard {
       );
     }
     assertResolvedUnits(units);
+    assertSimTypes(units, { perUnit: plan.units.map((u) => u.simType), scalar: executionData.simType });
 
     const items: CloseItem[] = units.flatMap((u) => [
       { serialNumber: u.device.serialNumber, role: "device" as const, itemId: u.device.itemId },
@@ -154,7 +170,7 @@ export class CustodyGuard {
     const expected = requestItems.filter((item: any) => item.itemType === "POS").length;
     const countWarning = expected > 0 && expected !== units.length ? { expected, actual: units.length } : null;
 
-    return { items, units, pairingSource: plan.pairingSource, countWarning, requestItemsToBind };
+    return { items, units, primarySimType: primarySimType(units), pairingSource: plan.pairingSource, countWarning, requestItemsToBind };
   }
 
   /**

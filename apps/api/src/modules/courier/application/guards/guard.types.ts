@@ -57,6 +57,8 @@ export interface ExecutionInput {
   deviceSerials?: string[];
   /** Extra SIMs beyond primary `simSerial` (portal multi-serial close). */
   simSerials?: string[];
+  /** SIM type as restated by the client (legacy field); checked against inventory, never trusted. */
+  simType?: string;
   /** Installation units (units[] contract or PDF devices[]); absent = legacy fields above. */
   units?: CloseUnitsPlan;
   extraField1?: string;

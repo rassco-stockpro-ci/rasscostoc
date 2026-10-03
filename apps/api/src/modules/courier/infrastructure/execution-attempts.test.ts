@@ -51,6 +51,7 @@ vi.mock("@core/serial/serial-recognition.service", () => ({
   SerialRecognitionService: {
     findItemBySerial: vi.fn().mockResolvedValue(null),
     buildStoredSerialCandidates: vi.fn(async (s: string) => [s]),
+    resolveCarrierName: vi.fn(() => null),
   },
 }));
 

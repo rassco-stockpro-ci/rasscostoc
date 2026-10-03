@@ -143,7 +143,10 @@ export class CloseRequestUseCase {
     // 2. The installation units (the Device<->SIM pairing), once per request:
     //    a re-save of an already-deducted request writes none.
     const execution = event.payload.execution ?? {};
-    const persistedUnits = plan.prepared ? await this.insertUnits(ctx, requestId, execution.id, plan) : [];
+    const inserted = plan.prepared ? await this.insertUnits(ctx, requestId, execution.id, plan) : [];
+    // simType is derived from inventory (not a column): carry it on the units the event and response expose.
+    const simTypeOf = new Map(plan.units.map((u) => [u.unitNo, u.sim?.carrierName ?? null]));
+    const persistedUnits = inserted.map((u) => ({ ...u, simType: simTypeOf.get(u.unitNo) ?? null }));
     execution.units = persistedUnits;
 
     // 3. This close's request items -> INSTALLED, linked to their unit;

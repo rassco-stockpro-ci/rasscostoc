@@ -28,10 +28,14 @@ describe("units[] contract", () => {
     const plan = unitsFromPayload([{ deviceSerial: " A1 ", simSerial: "S1", tid: "T1" }, { deviceSerial: "A2", simWaived: true }]);
     expect(plan.pairingSource).toBe("EXPLICIT");
     expect(plan.units).toEqual([
-      { unitNo: 1, deviceSerial: "A1", simSerial: "S1", simWaived: false, tid: "T1" },
-      { unitNo: 2, deviceSerial: "A2", simSerial: null, simWaived: true, tid: null },
+      { unitNo: 1, deviceSerial: "A1", simSerial: "S1", simWaived: false, tid: "T1", simType: null },
+      { unitNo: 2, deviceSerial: "A2", simSerial: null, simWaived: true, tid: null, simType: null },
     ]);
     expect(serialListsOf(plan)).toEqual({ deviceSerials: ["A1", "A2"], simSerials: ["S1"] });
+  });
+  it("a restated simType is carried only to be compared with inventory", () => {
+    const plan = unitsFromPayload([{ deviceSerial: "A1", simSerial: "S1", simType: " STC " }]);
+    expect(plan.units[0]!.simType).toBe("STC");
   });
   it("refuses a non-list or malformed entries", () => {
     expect(code(() => unitsFromPayload("A1"))).toBe("UNIT_INVALID_PAYLOAD");

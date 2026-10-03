@@ -405,7 +405,7 @@ describe("Close + deduction atomicity, event durability, guards, orphan items, i
       { serialNumber: s.sim, role: "sim", itemId: s.simId },
     ]);
     expect(decision.units).toEqual([
-      { unitNo: 1, device: { itemId: s.deviceId, serialNumber: s.device }, sim: { itemId: s.simId, serialNumber: s.sim }, simWaived: false, tid: null },
+      { unitNo: 1, device: { itemId: s.deviceId, serialNumber: s.device }, sim: { itemId: s.simId, serialNumber: s.sim, carrierName: null }, simWaived: false, tid: null },
     ]);
     expect(decision.requestItemsToBind).toHaveLength(2);
     expect(await db.select().from(courierRequestItems).where(eq(courierRequestItems.requestId, s.requestId))).toHaveLength(0);
