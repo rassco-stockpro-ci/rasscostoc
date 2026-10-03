@@ -55,11 +55,11 @@ describe("SIM type is derived from inventory (HTTP + PostgreSQL)", () => {
     simTypeIds.Zain = randomUUID();
     simTypeIds.NONE = randomUUID();
     await db.insert(itemTypes).values([
-      { id: deviceTypeId, nameAr: "جهاز", nameEn: `ST-POS-${tag}`, category: "devices" },
-      { id: simTypeIds.STC, nameAr: "شريحة STC", nameEn: `STC SIM ${tag}`, category: "sim" },
-      { id: simTypeIds.Zain, nameAr: "شريحة زين", nameEn: `Zain SIM ${tag}`, category: "sim" },
+      { id: deviceTypeId, nameAr: `جهاز ${tag}`, nameEn: `ST-POS-${tag}`, category: "devices" },
+      { id: simTypeIds.STC, nameAr: `شريحة STC ${tag}`, nameEn: `STC SIM ${tag}`, category: "sim" },
+      { id: simTypeIds.Zain, nameAr: `شريحة زين ${tag}`, nameEn: `Zain SIM ${tag}`, category: "sim" },
       // a SIM item type whose names resolve to no carrier
-      { id: simTypeIds.NONE, nameAr: "شريحة عامة", nameEn: `Generic SIM ${tag}`, category: "sim" },
+      { id: simTypeIds.NONE, nameAr: `شريحة عامة ${tag}`, nameEn: `Generic SIM ${tag}`, category: "sim" },
     ]);
     app = express();
     app.use(express.json());
@@ -127,9 +127,11 @@ describe("SIM type is derived from inventory (HTTP + PostgreSQL)", () => {
     expect(d.execution.units[0]).toMatchObject({ simSerial: p.sim, simType: "STC" });
     const [unitRow] = await db.select().from(courierExecutionUnits).where(eq(courierExecutionUnits.requestId, requestId));
     expect(unitRow!.simItemId).toBe(p.simId); // the type is derived from THIS inventory item, not stored on the unit
+    // other test files share this database: pick the event by this test's own SIM serial, not by request id alone
     const event = (await db.select().from(outboxEvents).where(eq(outboxEvents.eventName, "ExecutionCompletedEvent"))).find(
-      (e) => (e.payload as any).requestId === requestId
+      (e) => (e.payload as any).requestId === requestId && (e.payload as any).execution?.units?.[0]?.simSerial === p.sim
     );
+    expect(event).toBeTruthy();
     expect((event!.payload as any).execution.units[0].simType).toBe("STC");
   }, 30000);
 
@@ -168,6 +170,35 @@ describe("SIM type is derived from inventory (HTTP + PostgreSQL)", () => {
     expect(units.map((u) => [u.simSerial, u.simType])).toEqual([[a.sim, "Zain"], [b.sim, "STC"]]);
     expect(await storedSimType(requestId)).toBe("Zain"); // unit 1's type, from inventory — not the scalar the client sent
   }, 30000);
+
+  // ── ICCID not in inventory / held by another technician ─────────────────
+  it("an ICCID that is not in inventory: the lookup gives no item and no type, so nothing is shown or sent", async () => {
+    await seedTech("ghost");
+    const lk = await lookup(serial("8996GHOST"));
+    expect(lk.status).toBe(200);
+    expect(lk.body.found).toBe(false);
+    expect(lk.body.item ?? null).toBeNull();
+    expect(lk.body.itemType?.carrierName ?? null).toBeNull();
+  });
+
+  it("an ICCID in another technician's custody: the close is refused (422) even with the SIM's true type, nothing written", async () => {
+    const owner = await seedTech("owner");
+    const sim = serial("8996OTHER");
+    const simId = await seedItem(owner.id, sim, "STC");
+    const tech = await seedTech("closer"); // the closing technician (currentUser)
+    const device = serial("STD");
+    const deviceId = await seedItem(tech.id, device, "device");
+    const requestId = await seedRequest();
+
+    const lk = await lookup(sim);
+    expect(lk.body).toMatchObject({ found: true, itemType: { carrierName: "STC" } });
+
+    const res = await close(requestId, { units: [{ deviceSerial: device, simSerial: sim, simType: "STC" }] });
+    expect(res.status).toBe(422);
+    await expectNothingWritten(requestId, [deviceId, simId]);
+    const [simRow] = await db.select().from(items).where(eq(items.id, simId));
+    expect(simRow!.currentOwnerId).toBe(owner.id); // still the other technician's
+  });
 
   // ── forgery: ICCID A + type B ───────────────────────────────────────────
   it("ICCID of an STC SIM + type Zain in units[] → 422 SIM_TYPE_MISMATCH, nothing written", async () => {
