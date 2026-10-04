@@ -1634,6 +1634,14 @@ export class CourierService {
     }
 
     const version = (executionPayload as any)?.version;
+    // An Excel-import placeholder is not a real execution: this real close takes it over instead
+    // of failing with DuplicateRequestApprovalError. Advisory here; the takeover UPDATE re-checks
+    // the same predicate under the transaction and is the authoritative decision.
+    const placeholder =
+      existing && version === undefined && (await this.executionsRepo.isImportPlaceholderExecution(existing.id, pdfId))
+        ? existing
+        : null;
+    const priorExecution = placeholder ? null : existing;
     const sanitized = CourierService.sanitizeExecutionPayload(executionPayload);
     const isCompleted = isCompletedStatus(sanitized.installationStatus);
     // The approved device cards are explicit units (device + SIM + TID each).
@@ -1667,7 +1675,7 @@ export class CourierService {
       enteredBy,
       executionData: { ...sanitized, deviceSerials, simSerials, units },
       request,
-      existingExecution: existing ?? null,
+      existingExecution: priorExecution ?? null,
       requestsRepo: this.requestsRepo,
       dashboardRepo: this.dashboardRepo,
       inventoryPort: this.inventoryPort,
@@ -1736,7 +1744,26 @@ export class CourierService {
       // absence with a pre-existing execution means some other approval
       // already produced it, and this attempt must fail closed as the
       // same structured conflict as the concurrent-insert case.
-      if (existing) {
+      if (placeholder) {
+        result = await ctx.executionsRepository.takeOverImportPlaceholder(
+          placeholder.id,
+          placeholder.version,
+          pdfId,
+          { ...sanitized, enteredBy },
+        );
+        if (!result) {
+          throw new DuplicateRequestApprovalError(requestId);
+        }
+        await ctx.dashboardRepository.insertAuditLog({
+          tableName: "executions",
+          recordId: requestId,
+          fieldName: "import_placeholder",
+          oldValue: JSON.stringify(placeholder),
+          newValue: `taken over by pdf report #${pdfId}`,
+          action: "import_placeholder_takeover",
+          changedBy: enteredBy,
+        });
+      } else if (existing) {
         if (version === undefined) {
           throw new DuplicateRequestApprovalError(requestId);
         }
@@ -1772,7 +1799,7 @@ export class CourierService {
       await ctx.dashboardRepository.insertAuditLog({
         tableName: "executions",
         recordId: requestId,
-        action: existing ? "update" : "create",
+        action: priorExecution ? "update" : "create",
         changedBy: enteredBy,
       });
 
@@ -2232,20 +2259,25 @@ export class CourierService {
         updatedAt: new Date()
       });
 
-      // === Auto-create execution if Excel contains field/device completion data ===
-      const hasExecutionData = !!(data.sn || data.simSerial || data.installationStatus || data.salesTechnician || data.deliveryDate);
+      // === Auto-create execution only from real completion evidence ===
+      // A device/SIM serial, or an explicit completed status. A technician name, a date or an
+      // in-progress status describe the ticket, not an installation: rows like that used to get a
+      // placeholder execution that then blocked the request's real close.
+      const normalizeStatus = (s: string | null | undefined): string => {
+        if (!s) return "Installation Completed";
+        const lower = s.toLowerCase();
+        // "not completed" contains "complet" - the negation must be checked first.
+        if (lower.includes("not") || lower.includes("غير")) return "Not Completed";
+        if (lower.includes("complet")) return "Installation Completed";
+        if (lower.includes("progress") || lower.includes("إجراء")) return "In Progress";
+        if (lower.includes("answer") || lower.includes("يرد")) return "Customer Not Answering";
+        return s; // keep original if unrecognized
+      };
+      const hasExecutionData =
+        !!(data.sn || data.simSerial) ||
+        (!!data.installationStatus && normalizeStatus(data.installationStatus) === "Installation Completed");
       if (hasExecutionData) {
         try {
-          const normalizeStatus = (s: string | null | undefined): string => {
-            if (!s) return "Installation Completed";
-            const lower = s.toLowerCase();
-            if (lower.includes("complet")) return "Installation Completed";
-            if (lower.includes("not") || lower.includes("غير")) return "Not Completed";
-            if (lower.includes("progress") || lower.includes("إجراء")) return "In Progress";
-            if (lower.includes("answer") || lower.includes("يرد")) return "Customer Not Answering";
-            return s; // keep original if unrecognized
-          };
-
           await this.executionsRepo.insertExecution({
             requestId: newRequest.id,
             installationStatus: normalizeStatus(data.installationStatus),

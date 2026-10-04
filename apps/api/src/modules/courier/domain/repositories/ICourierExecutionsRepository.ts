@@ -4,6 +4,16 @@ export interface ICourierExecutionsRepository {
   findExecutionByRequestId(requestId: number, tx?: any): Promise<CourierExecution | null>;
   updateExecution(requestId: number, executionData: any, expectedVersion?: number, tx?: any): Promise<CourierExecution | null>;
   insertExecution(executionData: any, tx?: any): Promise<CourierExecution>;
+  /** True only for an Excel-import placeholder (see importPlaceholderCondition in the Drizzle repository). */
+  isImportPlaceholderExecution(executionId: number, closingPdfId: number, tx?: any): Promise<boolean>;
+  /** Replaces an import placeholder with the real close's data; null if it is not (or no longer) one. */
+  takeOverImportPlaceholder(
+    executionId: number,
+    expectedVersion: number,
+    closingPdfId: number,
+    executionData: any,
+    tx?: any,
+  ): Promise<CourierExecution | null>;
   findExecutionAttempts(requestId: number, tx?: any): Promise<CourierExecutionAttempt[]>;
   insertExecutionAttempt(attemptData: any, tx?: any): Promise<CourierExecutionAttempt>;
   /**
