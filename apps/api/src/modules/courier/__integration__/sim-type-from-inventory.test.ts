@@ -285,7 +285,14 @@ describe("SIM type is derived from inventory (HTTP + PostgreSQL)", () => {
     const requestId = await seedRequest();
     const [pdf] = await db
       .insert(courierPdfReports)
-      .values({ requestId, fileName: "r.pdf", filePath: `/tmp/${randomUUID()}.pdf`, uploadedBy: tech.id, status: "pending" })
+      .values({
+        requestId,
+        fileName: "r.pdf",
+        filePath: `/tmp/${randomUUID()}.pdf`,
+        uploadedBy: tech.id,
+        status: "pending",
+        extractedJson: JSON.stringify({ retailer_name: { value: "ST" }, request_number: { value: String(requestId) } }),
+      })
       .returning();
     const res = await request(app).post(`/api/courier/pdf/${pdf!.id}/complete`).send({
       request_id: requestId,

@@ -35,8 +35,21 @@ import type {
 } from "../../domain/repositories/IIdentityUnitOfWork";
 import type { IRefreshTokenRepository } from "@stockpro/contracts";
 
+  /**
+   * ROOT CAUSE of a cross-file test-isolation regression (found via live reproduction and a direct
+   * data probe): RESTART IDENTITY applies to every table TRUNCATE actually empties in one statement,
+   * including ones pulled in only by CASCADE -- not just the five named here. courier_requests.
+   * created_by references users.id, so CASCADE also truncates courier_requests, and RESTART IDENTITY
+   * was also resetting courier_requests' id sequence back to 1. A later test's brand-new request
+   * could then reuse a low id an EARLIER, unrelated test's orphaned outbox_events row (no FK to
+   * courier_requests, never cleaned up by any test) still held in its JSONB payload, so a query
+   * filtering strictly by that exact request id returned both rows. This file's own assertions never
+   * depend on users/regions/etc. restarting from a specific id (they check per-user columns like
+   * authGeneration, not table-level sequence values), so CONTINUE IDENTITY clears every row exactly
+   * as before with none of this side effect.
+   */
 async function resetTables() {
-  await db.execute(sql.raw(`TRUNCATE TABLE "users", "regions", "refresh_tokens", "system_logs", "bearer_sessions" RESTART IDENTITY CASCADE`));
+  await db.execute(sql.raw(`TRUNCATE TABLE "users", "regions", "refresh_tokens", "system_logs", "bearer_sessions" CONTINUE IDENTITY CASCADE`));
 }
 
 async function makeActiveUser(role: string = "technician") {

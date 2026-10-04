@@ -23,14 +23,26 @@ import { db } from "../../config/db";
 import { sql } from "drizzle-orm";
 
 /**
- * Truncates the given tables (and anything cascade-linked) and resets
- * identity sequences. Pass only the tables a given test suite actually
- * touches — truncating all 60 tables per test is unnecessarily slow.
+ * Truncates the given tables and anything cascade-linked to them.
+ *
+ * CONTINUE IDENTITY, not RESTART IDENTITY (found via a real, reproduced cross-file regression on
+ * another branch, confirmed with a live data probe): Postgres TRUNCATE's RESTART IDENTITY resets
+ * the sequence of EVERY table the statement actually empties, including ones pulled in only by
+ * CASCADE — not just the ones named here. Every table any caller currently names (users, regions,
+ * number_sequences, etc.) uses a UUID primary key, not a real Postgres identity sequence, so no
+ * caller's own assertions depend on RESTART IDENTITY's effect on ITS named tables. But "users" is
+ * cascade-reachable from courier_requests (created_by) and several other unrelated tables with a
+ * real serial PK, which this call empties as a side effect, and used to reset their sequences too.
+ * A later test's brand-new row could then reuse a low id that an earlier, unrelated test's orphaned
+ * data (no FK, never cleaned up — e.g. outbox_events, whose requestId lives in a JSONB payload, not
+ * a constrained column) still referenced, so a query filtered by that exact id returned stale rows
+ * alongside or instead of the real ones. CONTINUE IDENTITY empties every named and cascade-linked
+ * table exactly as before, with none of this side effect.
  */
 export async function resetTestDatabase(tableNames: string[]): Promise<void> {
   if (tableNames.length === 0) return;
   const quoted = tableNames.map((t) => `"${t}"`).join(", ");
-  await db.execute(sql.raw(`TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`));
+  await db.execute(sql.raw(`TRUNCATE TABLE ${quoted} CONTINUE IDENTITY CASCADE`));
 }
 
 /**

@@ -150,7 +150,18 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
     return row.id as number;
   }
 
+  /**
+   * CLOSE REPORT-IDENTITY GATE (new): completePdfReport now requires the report's extracted
+   * customer name and request number to match the request being closed. extractedJson here
+   * mirrors the matched request exactly (same contract as update_rassco_extracted_json), so this
+   * file keeps exercising its own production-writer/status-transition assertions, not the new gate.
+   */
   async function seedPdfReport(requestId: number, uploadedBy: string, status = "pending") {
+    const [req] = await db.select().from(courierRequests).where(eq(courierRequests.id, requestId)).limit(1);
+    const extractedJson = JSON.stringify({
+      retailer_name: { value: req?.customerName ?? null, confidence: 95, source: "ai_engine" },
+      request_number: { value: String(requestId), confidence: 95, source: "ai_engine" },
+    });
     const [row] = await db
       .insert(courierPdfReports)
       .values({
@@ -159,6 +170,7 @@ describe("OPS-REMED-E4-P4-I2 — production writer custodyClosureStatus initiali
         filePath: `/tmp/${randomUUID()}.pdf`,
         uploadedBy,
         status,
+        extractedJson,
       })
       .returning();
     createdPdfIds.push(row.id);
