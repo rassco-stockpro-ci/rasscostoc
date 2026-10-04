@@ -79,6 +79,55 @@ function toExecutionUnit(row: any, simType: string | null = null): CourierExecut
   };
 }
 
+// An execution row created by importRawRequests from an Excel ticket row (technician name /
+// ticket date only) that never recorded any real work. Every condition is required:
+//  - written as RECONCILIATION_REQUIRED at insert time: only importRawRequests does that (live
+//    paths insert PENDING_DEDUCTION; the backfill script only relabels rows they created);
+//  - created by the request's own creator within 60s of the request (same import loop) and never
+//    modified since (version 1, updated_at = entered_at);
+//  - no device or SIM serial, and not marked "Installation Completed";
+//  - no trace of any real work: no execution units, no attempts, no deduction completion, no
+//    outbox event, no custody movement, no other applied PDF report, and no audit entry other
+//    than a rejected close (verification_failed).
+// closingPdfId is the report doing the close: it is already claimed (status "applied") inside the
+// same transaction before the takeover runs, so it must not count as "another applied report".
+function importPlaceholderCondition(closingPdfId: number) {
+  return sql`(
+    courier_executions.custody_closure_status = 'RECONCILIATION_REQUIRED'
+    AND courier_executions.version = 1
+    AND courier_executions.updated_at = courier_executions.entered_at
+    AND coalesce(courier_executions.sn, '') = ''
+    AND coalesce(courier_executions.sim_serial, '') = ''
+    AND courier_executions.installation_status IS DISTINCT FROM 'Installation Completed'
+    AND EXISTS (
+      SELECT 1 FROM courier_requests r
+      WHERE r.id = courier_executions.request_id
+        AND r.created_by IS NOT DISTINCT FROM courier_executions.entered_by
+        AND abs(extract(epoch FROM (courier_executions.entered_at - r.created_at))) <= 60
+    )
+    AND NOT EXISTS (SELECT 1 FROM courier_execution_units u
+      WHERE u.execution_id = courier_executions.id OR u.request_id = courier_executions.request_id)
+    AND NOT EXISTS (SELECT 1 FROM courier_execution_attempts t WHERE t.request_id = courier_executions.request_id)
+    AND NOT EXISTS (SELECT 1 FROM inventory_deduction_completions d WHERE d.request_id = courier_executions.request_id)
+    AND NOT EXISTS (SELECT 1 FROM outbox_events o WHERE o.payload->>'requestId' = courier_executions.request_id::text)
+    AND NOT EXISTS (SELECT 1 FROM custody_movements m
+      WHERE m.reference_type = 'COURIER_REQUEST' AND m.reference_id = courier_executions.request_id::text)
+    AND NOT EXISTS (SELECT 1 FROM courier_pdf_reports p
+      WHERE p.request_id = courier_executions.request_id AND p.status = 'applied' AND p.id <> ${closingPdfId})
+    AND NOT EXISTS (SELECT 1 FROM courier_audit_logs a
+      WHERE a.table_name IN ('executions', 'courier_executions')
+        AND a.record_id = courier_executions.request_id
+        AND a.action <> 'verification_failed')
+  )`;
+}
+
+const BLANK_EXECUTION_FIELDS = {
+  requestPriorityLevel: null, pushBack: null, installationStatus: null, paperRoll: null,
+  paperRollQty: 0, stickersQty: 0, nulipCardsQty: 0, time: null, deliveryDate: null, responseDate: null,
+  sn: null, simSerial: null, simType: null, customerNotes: null, extraField1: null, extraField2: null,
+  responseReasonCode: null, salesTechnician: null, technicianCode: null, extractionConfidence: null,
+};
+
 export class DrizzleCourierRepository implements
   ICourierRepository,
   ICourierRequestsRepository,
@@ -190,6 +239,51 @@ export class DrizzleCourierRepository implements
       .from(courierExecutions)
       .where(eq(courierExecutions.requestId, requestId))
       .limit(1);
+    return row ? CourierExecutionMapper.toDomain(row) : null;
+  }
+
+  async isImportPlaceholderExecution(executionId: number, closingPdfId: number, tx?: any): Promise<boolean> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select({ id: courierExecutions.id })
+      .from(courierExecutions)
+      .where(and(eq(courierExecutions.id, executionId), importPlaceholderCondition(closingPdfId)))
+      .limit(1);
+    return !!row;
+  }
+
+  // The placeholder becomes exactly the row a fresh insert would have produced: every business
+  // column is reset, then the real close's data is applied. Its old state is kept by the
+  // caller's audit row. Version guard + the same predicate in the WHERE make this the single
+  // authoritative decision: a concurrent second close re-evaluates after the first commits and
+  // affects zero rows.
+  async takeOverImportPlaceholder(
+    executionId: number,
+    expectedVersion: number,
+    closingPdfId: number,
+    executionData: any,
+    tx?: any,
+  ): Promise<CourierExecution | null> {
+    const client = this.getClient(tx);
+    const mapped = Object.fromEntries(
+      Object.entries(CourierExecutionMapper.toPersistence(executionData)).filter(([, v]) => v !== undefined),
+    );
+    const [row] = await client
+      .update(courierExecutions)
+      .set({
+        ...BLANK_EXECUTION_FIELDS,
+        ...mapped,
+        custodyClosureStatus: "PENDING_DEDUCTION",
+        enteredAt: new Date(),
+        updatedAt: new Date(),
+        version: sql`version + 1`,
+      })
+      .where(and(
+        eq(courierExecutions.id, executionId),
+        eq(courierExecutions.version, expectedVersion),
+        importPlaceholderCondition(closingPdfId),
+      ))
+      .returning();
     return row ? CourierExecutionMapper.toDomain(row) : null;
   }
 
