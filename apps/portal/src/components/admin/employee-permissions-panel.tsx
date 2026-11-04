@@ -40,6 +40,9 @@ import {
   SlidersHorizontal,
   Truck,
   UserCog,
+  Users,
+  Warehouse,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +58,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -287,6 +291,11 @@ export function EmployeePermissionsPanel({ employee, usersById, regionsById, onC
             <MapPin className="h-4 w-4 me-1.5" />
             {t("permissions_center.tabs.scope")}
           </TabsTrigger>
+          <TabsTrigger value="management" data-testid="tab-management" className="text-sm font-semibold">
+            <Warehouse className="h-4 w-4 me-1.5" />
+            {t("permissions_center.tabs.management")}
+          </TabsTrigger>
+
           <TabsTrigger value="audit" data-testid="tab-audit" className="text-sm font-semibold">
             <History className="h-4 w-4 me-1.5" />
             {t("permissions_center.tabs.audit")}
@@ -346,6 +355,10 @@ export function EmployeePermissionsPanel({ employee, usersById, regionsById, onC
 
         <TabsContent value="scope">
           <DataScopeCard t={t} snapshot={snapshot} regionName={region?.name} />
+        </TabsContent>
+
+        <TabsContent value="management">
+          <ManagementScopeTab t={t} employee={employee} usersById={usersById} regionName={region?.name} />
         </TabsContent>
 
         <TabsContent value="audit">
@@ -1096,6 +1109,286 @@ function DataScopeCard({
       <div className="flex items-start gap-2.5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
         <Lock className="h-4 w-4 mt-0.5 shrink-0" />
         <span>{t("permissions_center.scope_tab.no_global_note")}</span>
+      </div>
+    </div>
+  );
+}
+
+/** Management Scope — the actual supervisor_warehouses / supervisor_technicians relationship
+ * rows (OPS-PERM-S1-F4's own backend: POST/DELETE /api/supervisors/:id/{warehouses,technicians}/:id,
+ * already in production, unrelated to the page/action permission engine above). This is a
+ * DIFFERENT axis from the "access" tab: access controls WHAT a supervisor may do on a page;
+ * management scope controls WHICH warehouses/technicians they may do it to. A supervisor with
+ * zero rows here is blocked from every warehouse- and technician-scoped action regardless of
+ * what the access tab shows — this tab exists so that gap is visible in the UI instead of only
+ * discoverable by calling the API directly. The add list is filtered to the supervisor's own
+ * region, matching the backend's own region-equality requirement (decideWarehouseScope /
+ * assignRequest) — adding an out-of-region item would create a relation row the backend can
+ * never actually honor. An already-assigned out-of-region row (e.g. a legacy relation from
+ * before the region invariant existed) is still shown and still removable, never hidden. */
+function ManagementScopeTab({
+  t,
+  employee,
+  usersById,
+  regionName,
+}: {
+  t: ReturnType<typeof useTranslation>["t"];
+  employee: UserSafe;
+  usersById: Map<string, UserSafe>;
+  regionName?: string;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const userId = employee.id;
+
+  const warehousesQuery = useQuery<string[]>({
+    queryKey: [`/api/supervisors/${userId}/warehouses`],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/supervisors/${userId}/warehouses`);
+      return res.json();
+    },
+  });
+  const allWarehousesQuery = useQuery<{ id: string; name: string; regionId: string | null }[]>({
+    queryKey: ["/api/warehouses"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/warehouses");
+      return res.json();
+    },
+  });
+  const techniciansQuery = useQuery<string[]>({
+    queryKey: [`/api/supervisors/${userId}/technicians`],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/supervisors/${userId}/technicians`);
+      return res.json();
+    },
+  });
+
+  const [selectedWarehouseToAdd, setSelectedWarehouseToAdd] = useState("");
+  const [selectedTechnicianToAdd, setSelectedTechnicianToAdd] = useState("");
+
+  const invalidateWarehouses = () => queryClient.invalidateQueries({ queryKey: [`/api/supervisors/${userId}/warehouses`] });
+  const invalidateTechnicians = () => queryClient.invalidateQueries({ queryKey: [`/api/supervisors/${userId}/technicians`] });
+
+  const onWriteError = (error: any) =>
+    toast({ title: t("permissions_center.management.write_error"), description: error?.message || undefined, variant: "destructive" });
+
+  const addWarehouseMutation = useMutation({
+    mutationFn: (warehouseId: string) => apiRequest("POST", `/api/supervisors/${userId}/warehouses/${warehouseId}`),
+    onSuccess: async () => {
+      await invalidateWarehouses();
+      toast({ title: t("permissions_center.management.add_success") });
+      setSelectedWarehouseToAdd("");
+    },
+    onError: onWriteError,
+  });
+  const removeWarehouseMutation = useMutation({
+    mutationFn: (warehouseId: string) => apiRequest("DELETE", `/api/supervisors/${userId}/warehouses/${warehouseId}`),
+    onSuccess: async () => {
+      await invalidateWarehouses();
+      toast({ title: t("permissions_center.management.remove_success") });
+    },
+    onError: onWriteError,
+  });
+  const addTechnicianMutation = useMutation({
+    mutationFn: (technicianId: string) => apiRequest("POST", `/api/supervisors/${userId}/technicians/${technicianId}`),
+    onSuccess: async () => {
+      await invalidateTechnicians();
+      toast({ title: t("permissions_center.management.add_success") });
+      setSelectedTechnicianToAdd("");
+    },
+    onError: onWriteError,
+  });
+  const removeTechnicianMutation = useMutation({
+    mutationFn: (technicianId: string) => apiRequest("DELETE", `/api/supervisors/${userId}/technicians/${technicianId}`),
+    onSuccess: async () => {
+      await invalidateTechnicians();
+      toast({ title: t("permissions_center.management.remove_success") });
+    },
+    onError: onWriteError,
+  });
+
+  if (warehousesQuery.isLoading || allWarehousesQuery.isLoading || techniciansQuery.isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 rounded-2xl bg-white p-12 text-rassco-text shadow-sm min-h-[200px]">
+        <Loader2Spin />
+        <span>{t("permissions_center.management.loading")}</span>
+      </div>
+    );
+  }
+
+  const assignedWarehouseIds = new Set(warehousesQuery.data ?? []);
+  const assignedTechnicianIds = new Set(techniciansQuery.data ?? []);
+  const allWarehouses = allWarehousesQuery.data ?? [];
+  const allTechnicians = Array.from(usersById.values()).filter((u) => u.role === "technician");
+
+  const inRegion = <ItemT extends { regionId: string | null }>(items: ItemT[]) =>
+    employee.regionId ? items.filter((item) => item.regionId === employee.regionId) : [];
+  const outOfRegionAssigned = <ItemT extends { id: string; regionId: string | null }>(items: ItemT[], assignedIds: Set<string>) =>
+    items.filter((item) => assignedIds.has(item.id) && item.regionId !== employee.regionId);
+
+  const regionWarehouses = inRegion(allWarehouses);
+  const assignedWarehouses = [
+    ...regionWarehouses.filter((w) => assignedWarehouseIds.has(w.id)),
+    ...outOfRegionAssigned(allWarehouses, assignedWarehouseIds),
+  ];
+  const addableWarehouses = regionWarehouses.filter((w) => !assignedWarehouseIds.has(w.id));
+
+  const regionTechnicians = inRegion(allTechnicians);
+  const assignedTechnicians = [
+    ...regionTechnicians.filter((u) => assignedTechnicianIds.has(u.id)),
+    ...outOfRegionAssigned(allTechnicians, assignedTechnicianIds),
+  ];
+  const addableTechnicians = regionTechnicians.filter((u) => !assignedTechnicianIds.has(u.id));
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl bg-white shadow-sm p-6 space-y-2">
+        <p className="text-sm text-muted-foreground">{t("permissions_center.management.subtitle")}</p>
+        {employee.regionId && regionName ? (
+          <p className="text-xs text-muted-foreground">
+            {t("permissions_center.management.region_filter_note", { region: regionName })}
+          </p>
+        ) : null}
+      </div>
+
+      {!employee.regionId ? (
+        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-5 text-sm text-amber-800">
+          {t("permissions_center.management.no_region_note")}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <ManagedEntityCard
+            icon={<Warehouse className="h-4 w-4" />}
+            heading={t("permissions_center.management.warehouses_heading")}
+            emptyLabel={t("permissions_center.management.warehouses_empty")}
+            assignedItems={assignedWarehouses.map((w) => ({ id: w.id, label: w.name }))}
+            onRemove={(id) => removeWarehouseMutation.mutate(id)}
+            removePending={removeWarehouseMutation.isPending}
+            removeTooltip={t("permissions_center.management.remove_tooltip")}
+            addPlaceholder={t("permissions_center.management.add_warehouse_placeholder")}
+            addNoneLabel={t("permissions_center.management.no_more_in_region")}
+            addButtonLabel={t("permissions_center.management.add_button")}
+            addableItems={addableWarehouses.map((w) => ({ id: w.id, label: w.name }))}
+            selectedToAdd={selectedWarehouseToAdd}
+            onSelectedToAddChange={setSelectedWarehouseToAdd}
+            onAdd={() => selectedWarehouseToAdd && addWarehouseMutation.mutate(selectedWarehouseToAdd)}
+            addPending={addWarehouseMutation.isPending}
+            testIdPrefix="warehouse"
+          />
+          <ManagedEntityCard
+            icon={<Users className="h-4 w-4" />}
+            heading={t("permissions_center.management.technicians_heading")}
+            emptyLabel={t("permissions_center.management.technicians_empty")}
+            assignedItems={assignedTechnicians.map((u) => ({ id: u.id, label: u.fullName }))}
+            onRemove={(id) => removeTechnicianMutation.mutate(id)}
+            removePending={removeTechnicianMutation.isPending}
+            removeTooltip={t("permissions_center.management.remove_tooltip")}
+            addPlaceholder={t("permissions_center.management.add_technician_placeholder")}
+            addNoneLabel={t("permissions_center.management.no_more_in_region")}
+            addButtonLabel={t("permissions_center.management.add_button")}
+            addableItems={addableTechnicians.map((u) => ({ id: u.id, label: u.fullName }))}
+            selectedToAdd={selectedTechnicianToAdd}
+            onSelectedToAddChange={setSelectedTechnicianToAdd}
+            onAdd={() => selectedTechnicianToAdd && addTechnicianMutation.mutate(selectedTechnicianToAdd)}
+            addPending={addTechnicianMutation.isPending}
+            testIdPrefix="technician"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One managed-relationship card (warehouses or technicians) — assigned items as removable
+ * chips, plus a region-filtered add control. Shared by both halves of ManagementScopeTab so the
+ * two lists can never visually or behaviorally drift apart. */
+function ManagedEntityCard({
+  icon,
+  heading,
+  emptyLabel,
+  assignedItems,
+  onRemove,
+  removePending,
+  removeTooltip,
+  addPlaceholder,
+  addNoneLabel,
+  addButtonLabel,
+  addableItems,
+  selectedToAdd,
+  onSelectedToAddChange,
+  onAdd,
+  addPending,
+  testIdPrefix,
+}: {
+  icon: ReactNode;
+  heading: string;
+  emptyLabel: string;
+  assignedItems: { id: string; label: string }[];
+  onRemove: (id: string) => void;
+  removePending: boolean;
+  removeTooltip: string;
+  addPlaceholder: string;
+  addNoneLabel: string;
+  addButtonLabel: string;
+  addableItems: { id: string; label: string }[];
+  selectedToAdd: string;
+  onSelectedToAddChange: (value: string) => void;
+  onAdd: () => void;
+  addPending: boolean;
+  testIdPrefix: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-white shadow-sm p-6 space-y-4">
+      <div className="flex items-center gap-2 text-rassco-text font-semibold">
+        {icon}
+        <span>{heading}</span>
+      </div>
+
+      {assignedItems.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {assignedItems.map((item) => (
+            <Badge key={item.id} variant="outline" className="gap-1.5 py-1.5 ps-3 pe-1.5 text-sm font-medium">
+              {item.label}
+              <button
+                type="button"
+                onClick={() => onRemove(item.id)}
+                disabled={removePending}
+                title={removeTooltip}
+                data-testid={`button-remove-${testIdPrefix}-${item.id}`}
+                className="rounded-full hover:bg-muted p-0.5 disabled:opacity-50"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 pt-2 border-t border-rassco-border/60">
+        <Select value={selectedToAdd} onValueChange={onSelectedToAddChange} disabled={addableItems.length === 0}>
+          <SelectTrigger data-testid={`select-add-${testIdPrefix}`} className="flex-1">
+            <SelectValue placeholder={addableItems.length === 0 ? addNoneLabel : addPlaceholder} />
+          </SelectTrigger>
+          <SelectContent>
+            {addableItems.map((item) => (
+              <SelectItem key={item.id} value={item.id}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          size="sm"
+          onClick={onAdd}
+          disabled={!selectedToAdd || addPending}
+          data-testid={`button-add-${testIdPrefix}`}
+        >
+          {addPending ? <Loader2Spin className="me-1" /> : null}
+          {addButtonLabel}
+        </Button>
       </div>
     </div>
   );

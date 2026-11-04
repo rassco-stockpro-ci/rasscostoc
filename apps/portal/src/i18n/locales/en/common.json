@@ -128,6 +128,7 @@
       "page_access": "Page Access",
       "actions": "Action Permissions",
       "scope": "Data Scope",
+      "management": "Management Scope",
       "audit": "Change History"
     },
     "filters": {
@@ -297,6 +298,24 @@
       "grant": "Grant",
       "revoke": "Revoke",
       "reset": "Default (no override)"
+    },
+    "management": {
+      "subtitle": "The warehouses and technicians this supervisor actually manages - determines who sees what, independent of the action permissions in the first tab",
+      "warehouses_heading": "Managed Warehouses",
+      "warehouses_empty": "No warehouse is linked to this supervisor yet",
+      "technicians_heading": "Managed Technicians",
+      "technicians_empty": "No technician is linked to this supervisor yet",
+      "add_warehouse_placeholder": "Select a warehouse to add",
+      "add_technician_placeholder": "Select a technician to add",
+      "add_button": "Add",
+      "remove_tooltip": "Remove",
+      "no_more_in_region": "No more items in this supervisor's region to add",
+      "region_filter_note": "Only showing items in {{region}} - the backend does not allow linking an item from a different region",
+      "no_region_note": "This section cannot be managed before a region is assigned to this supervisor",
+      "loading": "Loading...",
+      "add_success": "Added successfully",
+      "remove_success": "Removed successfully",
+      "write_error": "Could not complete the operation"
     }
   },
   "ai_engine_settings": {
