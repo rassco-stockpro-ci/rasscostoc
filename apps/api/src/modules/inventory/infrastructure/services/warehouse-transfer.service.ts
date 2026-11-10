@@ -2,6 +2,7 @@ import { db } from "@core/config/db";
 import { items, itemTypes, inventoryTransactions, itemHistoryLogs, warehouseTransfers, technicianMovingInventoryEntries, custodyMovements } from "@shared/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { CustodyEngine } from "./custody-engine";
+import { syncMovingInventory } from "../../contracts/moving-inventory-sync";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
 
 export class WarehouseTransferService {
@@ -78,6 +79,12 @@ export class WarehouseTransferService {
       changedById: userId,
       notes: `تم المسح والاستلام الفردي`,
     });
+
+    // Brand-new item minted straight into technician custody via a single
+    // serial scan — always a genuine gain, unconditionally sync the
+    // moving-inventory counter (this call was entirely missing before:
+    // the confirmed historical-audit gap of items held with no counter row).
+    await syncMovingInventory(db, userId, actualItemTypeId, 1);
 
     return {
       success: true,

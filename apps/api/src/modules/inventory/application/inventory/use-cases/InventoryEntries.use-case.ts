@@ -3,7 +3,7 @@ import type {
   TechnicianMovingInventoryEntry,
   WarehouseInventoryEntry,
 } from "@shared/schema";
-import type { IInventoryEntriesRepository, InventoryEntryInput } from '../contracts/IInventoryEntriesRepository';
+import type { IInventoryEntriesRepository, InventoryEntryActor, InventoryEntryInput } from '../contracts/IInventoryEntriesRepository';
 
 export class InventoryEntriesUseCase {
   constructor(private readonly repository: IInventoryEntriesRepository) {}
@@ -23,8 +23,10 @@ export class InventoryEntriesUseCase {
   async upsertTechnicianFixedEntry(
     technicianId: string,
     input: InventoryEntryInput,
+    actor: InventoryEntryActor,
+    idempotencyKey: string,
   ): Promise<TechnicianFixedInventoryEntry> {
-    return this.repository.upsertTechnicianFixedEntry(technicianId, input);
+    return this.repository.upsertTechnicianFixedEntry(technicianId, input, actor, idempotencyKey);
   }
 
   async getTechnicianMovingEntries(technicianId: string): Promise<TechnicianMovingInventoryEntry[]> {

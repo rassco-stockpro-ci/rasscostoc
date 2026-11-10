@@ -1,4 +1,4 @@
-import type { IInventoryEntriesRepository, InventoryEntryInput } from "@modules/inventory/application/inventory/contracts/IInventoryEntriesRepository";
+import type { IInventoryEntriesRepository, InventoryEntryActor, InventoryEntryInput } from "@modules/inventory/application/inventory/contracts/IInventoryEntriesRepository";
 import type {
   TechnicianFixedInventoryEntry,
   TechnicianMovingInventoryEntry,
@@ -6,7 +6,8 @@ import type {
 } from "@shared/schema";
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from "@core/database/connection";
-import { technicianFixedInventoryEntries } from "@shared/schema";
+import { technicianFixedInventoryEntries, systemLogs } from "@shared/schema";
+import { ConflictError } from "@core/errors/AppError";
 import { TechnicianInventoryRepository } from "@modules/inventory/infrastructure/database/TechnicianInventoryRepository";
 import { WarehouseInventoryRepository } from "@modules/inventory/infrastructure/database/WarehouseInventoryRepository";
 
@@ -41,40 +42,103 @@ export class DrizzleInventoryEntriesRepository implements IInventoryEntriesRepos
   async upsertTechnicianFixedEntry(
     technicianId: string,
     input: InventoryEntryInput,
+    actor: InventoryEntryActor,
+    idempotencyKey: string,
   ): Promise<TechnicianFixedInventoryEntry> {
-    const [existing] = await this.db
-      .select()
-      .from(technicianFixedInventoryEntries)
-      .where(and(
-        eq(technicianFixedInventoryEntries.technicianId, technicianId),
-        eq(technicianFixedInventoryEntries.itemTypeId, input.itemTypeId),
-      ));
+    return this.db.transaction(async (tx: any) => {
+      const [existing] = await tx
+        .select()
+        .from(technicianFixedInventoryEntries)
+        .where(and(
+          eq(technicianFixedInventoryEntries.technicianId, technicianId),
+          eq(technicianFixedInventoryEntries.itemTypeId, input.itemTypeId),
+        ));
 
-    if (existing) {
-      const [updated] = await this.db
-        .update(technicianFixedInventoryEntries)
-        .set({
-          boxes: input.boxes,
-          units: input.units,
-          updatedAt: new Date(),
-        })
-        .where(eq(technicianFixedInventoryEntries.id, existing.id))
-        .returning();
+      let result: TechnicianFixedInventoryEntry;
+      let before: { boxes: number; units: number } | null = null;
 
-      return updated;
-    }
+      if (existing) {
+        before = { boxes: existing.boxes, units: existing.units };
 
-    const [created] = await this.db
-      .insert(technicianFixedInventoryEntries)
-      .values({
-        technicianId,
-        itemTypeId: input.itemTypeId,
-        boxes: input.boxes,
-        units: input.units,
-      })
-      .returning();
+        // Optimistic lock: if the caller told us the version it last read,
+        // the write only applies against that exact version (plain integer
+        // equality — exact and reliable, unlike a timestamp CAS, which a
+        // real-SQL test proved unreliable: Postgres timestamp has
+        // microsecond precision, JS Date only millisecond, so a value read
+        // back and sent back for comparison never bit-for-bit matches its
+        // own stored value). A mismatch (0 rows affected) means a newer
+        // write already landed — reject instead of silently overwriting it
+        // (the proven Cycle B defect: absolute overwrite with no
+        // concurrency protection at all).
+        const whereClause = input.expectedVersion != null
+          ? and(
+              eq(technicianFixedInventoryEntries.id, existing.id),
+              eq(technicianFixedInventoryEntries.version, input.expectedVersion),
+            )
+          : eq(technicianFixedInventoryEntries.id, existing.id);
 
-    return created;
+        const updatedRows = await tx
+          .update(technicianFixedInventoryEntries)
+          .set({
+            boxes: input.boxes,
+            units: input.units,
+            updatedAt: new Date(),
+            version: existing.version + 1,
+          })
+          .where(whereClause)
+          .returning();
+
+        if (updatedRows.length === 0) {
+          throw new ConflictError(
+            "تم تعديل هذا الصنف بواسطة عملية أخرى بعد قراءتك الأخيرة — أعد تحميل البيانات وحاول مجدداً (Optimistic lock rejected a stale update)",
+          );
+        }
+
+        result = updatedRows[0];
+      } else {
+        const [created] = await tx
+          .insert(technicianFixedInventoryEntries)
+          .values({
+            technicianId,
+            itemTypeId: input.itemTypeId,
+            boxes: input.boxes,
+            units: input.units,
+          })
+          .returning();
+
+        result = created;
+      }
+
+      // Movement/audit record — reused `system_logs` rather than a new
+      // parallel table (no schema change needed): this is the ONLY
+      // auditable trace of a fixed-inventory quantity change today. Writing
+      // it in the same transaction as the balance update means a crash
+      // between the two is structurally impossible (the previous code had
+      // no movement record for this path at all).
+      await tx.insert(systemLogs).values({
+        userId: actor.id,
+        userName: actor.username,
+        userRole: actor.role,
+        action: existing ? "QUANTITY_UPDATE" : "QUANTITY_CREATE",
+        entityType: "technician_fixed_inventory_entry",
+        entityId: result.id,
+        entityName: `${technicianId}:${input.itemTypeId}`,
+        details: JSON.stringify({
+          technicianId,
+          itemTypeId: input.itemTypeId,
+          before,
+          after: { boxes: result.boxes, units: result.units },
+          idempotencyKey,
+        }),
+        description: existing
+          ? `تحديث مخزون ثابت: فني ${technicianId}, صنف ${input.itemTypeId}`
+          : `إنشاء مخزون ثابت: فني ${technicianId}, صنف ${input.itemTypeId}`,
+        severity: "info",
+        success: true,
+      });
+
+      return result;
+    });
   }
 
   async getTechnicianMovingEntries(technicianId: string): Promise<TechnicianMovingInventoryEntry[]> {

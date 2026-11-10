@@ -4,7 +4,7 @@
 
 import type { Request, Response } from "express";
 import { asyncHandler } from "@core/errors/errorHandler";
-import { NotFoundError } from "@core/errors/AppError";
+import { NotFoundError, ValidationError } from "@core/errors/AppError";
 import { z } from "zod";
 import {
   WithdrawToWarehouseUseCaseError,
@@ -277,17 +277,32 @@ export class TechniciansController {
    * Upsert technician's fixed inventory entry
    */
   upsertFixedInventoryEntry = asyncHandler(async (req: Request, res: Response) => {
+    const idempotencyKey = req.headers["x-idempotency-key"];
+    if (typeof idempotencyKey !== "string" || idempotencyKey.trim().length < 10) {
+      throw new ValidationError(
+        "يتطلب تحديث المخزون الثابت ترويسة X-Idempotency-Key صالحة (10 أحرف على الأقل) لمنع تنفيذ العملية مرتين",
+      );
+    }
+
     const schema = z.object({
       itemTypeId: z.string(),
       boxes: z.number().min(0),
       units: z.number().min(0),
+      expectedVersion: z.union([z.number().int().min(0), z.null()]).optional(),
     });
     const data = schema.parse(req.body);
-    const entry = await inventoryEntriesContainer.inventoryEntriesUseCase.upsertTechnicianFixedEntry(req.params.technicianId, {
-      itemTypeId: data.itemTypeId,
-      boxes: data.boxes,
-      units: data.units,
-    });
+    const actor = req.user!;
+    const entry = await inventoryEntriesContainer.inventoryEntriesUseCase.upsertTechnicianFixedEntry(
+      req.params.technicianId,
+      {
+        itemTypeId: data.itemTypeId,
+        boxes: data.boxes,
+        units: data.units,
+        expectedVersion: data.expectedVersion,
+      },
+      { id: actor.id, username: actor.username, role: actor.role },
+      idempotencyKey.trim(),
+    );
     res.json(entry);
   });
 

@@ -177,6 +177,17 @@ export const technicianFixedInventoryEntries = pgTable("technician_fixed_invento
   boxes: integer("boxes").notNull().default(0),
   units: integer("units").notNull().default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
+  /**
+   * Optimistic-lock token. An exact-equality timestamp CAS was tried first
+   * and proven unreliable by a real-SQL test: Postgres `timestamp` has
+   * microsecond precision, JS `Date` only millisecond — a value read back
+   * and sent back for comparison never bit-for-bit matches its own stored
+   * value, so a timestamp-based lock would reject legitimate unmodified
+   * writes, not just genuinely stale ones. A plain incrementing integer
+   * has no such precision pitfall. Schema change only — no migration has
+   * been run against any real database; that requires separate approval.
+   */
+  version: integer("version").notNull().default(0),
 }, (table) => ({
   fixedEntriesTechIdx: index("fixed_entries_tech_idx").on(table.technicianId),
   fixedEntriesItemIdx: index("fixed_entries_item_idx").on(table.itemTypeId),
