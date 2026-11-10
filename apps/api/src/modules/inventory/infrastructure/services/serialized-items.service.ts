@@ -1,7 +1,7 @@
 import { db } from "@core/config/db";
 import { AppError, NotFoundError } from "@core/errors/AppError";
 import { items, inventoryTransactions, itemHistoryLogs, itemTypes, users, custodyMovements, technicianMovingInventoryEntries, courierRequestItems, systemLogs } from "@shared/schema";
-import { eq, and, inArray, sql, or, desc } from "drizzle-orm";
+import { eq, and, inArray, sql, or, desc, ilike } from "drizzle-orm";
 import { SerialRecognitionService } from "./serial-recognition.service";
 
 /** Item is considered "held" by a technician in one of these statuses. */
@@ -546,6 +546,7 @@ export class SerializedItemsService {
         itemTypeNameEn: itemTypes.nameEn,
         ownerName: users.fullName,
         ownerUsername: users.username,
+        currentOwnerId: items.currentOwnerId,
       })
       .from(items)
       .leftJoin(itemTypes, eq(items.itemTypeId, itemTypes.id))
@@ -581,6 +582,58 @@ export class SerializedItemsService {
       ...item,
       history,
     };
+  }
+
+  /**
+   * Substring search across serialized items (devices/SIMs), for the admin
+   * "operations search" page — the admin-facing counterpart to lookup().
+   * Normalizes the query with the same cleanup rules used at write time
+   * (SerialRecognitionService.normalizeRawBarcode) before matching, so a
+   * label-prefixed or differently-separated query still finds the stored
+   * (already-normalized) value. Caller must pass an already-resolved scope
+   * filter (ownerIdFilter: undefined = unrestricted/admin, string[] = limit
+   * to those technicians' items) — this method does not itself decide
+   * authorization.
+   */
+  async searchItems(query: string, ownerIdFilter?: string[]): Promise<any[]> {
+    const cleaned = SerialRecognitionService.normalizeRawBarcode(query);
+    if (!cleaned) return [];
+
+    if (ownerIdFilter && ownerIdFilter.length === 0) {
+      // Caller has a real scope restriction but it resolves to zero technicians
+      // (e.g. a supervisor with no assignments) — nothing to search, not "unrestricted".
+      return [];
+    }
+
+    const matchCondition = or(
+      ilike(items.serialNumber, `%${cleaned}%`),
+      ilike(items.barcode, `%${cleaned}%`)
+    );
+
+    return await db
+      .select({
+        id: items.id,
+        serialNumber: items.serialNumber,
+        barcode: items.barcode,
+        status: items.status,
+        createdAt: items.createdAt,
+        itemTypeId: items.itemTypeId,
+        itemTypeNameAr: itemTypes.nameAr,
+        itemTypeNameEn: itemTypes.nameEn,
+        currentOwnerId: items.currentOwnerId,
+        ownerName: users.fullName,
+        ownerUsername: users.username,
+      })
+      .from(items)
+      .leftJoin(itemTypes, eq(items.itemTypeId, itemTypes.id))
+      .leftJoin(users, eq(items.currentOwnerId, users.id))
+      .where(
+        ownerIdFilter
+          ? and(matchCondition, inArray(items.currentOwnerId, ownerIdFilter))
+          : matchCondition
+      )
+      .orderBy(desc(items.updatedAt))
+      .limit(50);
   }
 
   async getTechnicianCustody(technicianId: string) {

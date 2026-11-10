@@ -51,6 +51,13 @@ export function registerSerializedItemsRoutes(app: Express): void {
     controller.lookup
   );
 
+  // Admin/supervisor substring search across serialized items (devices/SIMs)
+  app.get(
+    "/api/serialized-items/search",
+    requireAuth,
+    controller.search
+  );
+
   // TEMPORARY FEATURE — remove or disable after final customer handover.
   // Permanently delete a DEVICE or SIM from the authenticated technician's own active
   // custody. itemType is an explicit URL segment ("DEVICE"|"SIM") so the two can never
