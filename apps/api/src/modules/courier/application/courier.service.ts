@@ -533,7 +533,13 @@ export class CourierService {
                 if (simStr.includes("mobily")) hintItemTypeId = "mobilySim";
                 else if (simStr.includes("zain")) hintItemTypeId = "zainSim";
                 else if (simStr.includes("lebara")) hintItemTypeId = "lebaraSim";
-                else hintItemTypeId = "stcSim";
+                else if (simStr.includes("stc")) hintItemTypeId = "stcSim";
+                else {
+                  throw new AppError(
+                    `تعذّر تحديد شركة الشريحة تلقائيًا من بيانات الطلب ("${reqData?.sim ?? ""}"). يجب تحديد شركة الشريحة صراحة قبل المتابعة.`,
+                    400
+                  );
+                }
               }
 
               const stored = await ctx.inventoryPort.normalizeSerial(
@@ -1926,12 +1932,20 @@ export class CourierService {
       .where(or(eq(items.serialNumber, simSerial), eq(items.barcode, simSerial)))
       .limit(1);
 
+    const resolvedCarrierName = data.simType || (existing.length > 0 ? existing[0].carrierName : undefined);
+    if (!resolvedCarrierName) {
+      throw new AppError(
+        "تعذّر تحديد شركة الشريحة تلقائيًا؛ يجب إرسال simType صريحة عند عدم وجود سجل سابق لهذه الشريحة.",
+        400
+      );
+    }
+
     if (existing.length > 0) {
       const [updated] = await db
         .update(items)
         .set({
           currentOwnerId: targetOwnerId || existing[0].currentOwnerId,
-          carrierName: data.simType || existing[0].carrierName || "STC",
+          carrierName: resolvedCarrierName,
           status: "RECEIVED_BY_TECHNICIAN",
           updatedAt: new Date(),
         })
@@ -1949,7 +1963,7 @@ export class CourierService {
       itemTypeId: simTypeId,
       serialNumber: simSerial,
       barcode: simSerial,
-      carrierName: data.simType || "STC",
+      carrierName: resolvedCarrierName,
       currentOwnerId: targetOwnerId,
       status: targetOwnerId ? "RECEIVED_BY_TECHNICIAN" : "WAREHOUSE",
     }).returning();
