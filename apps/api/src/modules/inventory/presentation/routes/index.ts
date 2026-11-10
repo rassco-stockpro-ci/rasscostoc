@@ -23,7 +23,6 @@ import { registerInventoryRequestsManagementRoutes } from "./inventory-requests-
 import { registerInventoryRequestsCreateRoutes } from "./inventory-requests-create.routes";
 import { registerInventoryRequestsApprovalRoutes } from "./inventory-requests-approval.routes";
 import { registerWarehouseInventoryEntriesRoutes } from "./inventory-entries-warehouse.routes";
-import { registerTechnicianInventoryEntriesRoutes } from "./inventory-entries-technician.routes";
 import { registerInventoryEntriesMigrationRoutes } from "./inventory-entries-migration.routes";
 import { registerDevicesRoutes } from "./devices.routes";
 import { registerDashboardRoutes } from "./dashboard.routes";
@@ -57,7 +56,10 @@ export function registerInventoryRoutes(app: Express): void {
   registerInventoryRequestsCreateRoutes(app);
   registerInventoryRequestsApprovalRoutes(app);
   registerWarehouseInventoryEntriesRoutes(app);
-  registerTechnicianInventoryEntriesRoutes(app);
+  // NOTE: technician fixed/moving inventory-entries routes are registered by
+  // registerTechniciansInventoryRoutes() above (with requireTechnicianScope).
+  // A duplicate, unguarded registration of the same 4 routes used to live in
+  // inventory-entries-technician.routes.ts — removed as part of the IDOR fix.
   registerInventoryEntriesMigrationRoutes(app);
   registerDevicesRoutes(app);
   registerDashboardRoutes(app);

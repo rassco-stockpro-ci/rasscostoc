@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { serializedItemsContainer } from "@server/composition/serialized-items.container";
 import { requireAuth } from "@core/middlewares/auth.middleware";
+import { requireTechnicianScope } from "@core/middlewares/technician-scope.middleware";
 
 /**
  * Serialized Items Routing Configuration
@@ -12,6 +13,7 @@ export function registerSerializedItemsRoutes(app: Express): void {
   app.get(
     "/api/technicians/:technicianId/serialized-custody",
     requireAuth,
+    requireTechnicianScope,
     controller.getTechnicianCustody
   );
 
