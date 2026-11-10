@@ -1,11 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-// --- Mock the raw `db` import used directly by linkSimToTechnician (no live DB needed) ---
-const dbState = {
-  itemTypesRows: [{ id: "mobilySim", category: "sim", nameAr: "شريحة موبايلي" }] as any[],
-  itemsRows: [] as any[],
-};
-
 function makeSelectChain(rows: any[]) {
   const chain: any = {
     from: () => chain,
@@ -17,7 +11,7 @@ function makeSelectChain(rows: any[]) {
 
 vi.mock("@server/core/config/db", () => ({
   db: {
-    select: vi.fn(() => makeSelectChain([])), // overridden per-call via mockImplementationOnce in tests
+    select: vi.fn(() => makeSelectChain([])), // overridden per-call via mockReturnValueOnce in tests
     insert: vi.fn(() => ({
       values: (v: any) => ({
         returning: () => Promise.resolve([{ id: "new-type-id", ...v }]),
@@ -33,9 +27,21 @@ vi.mock("@server/core/config/db", () => ({
   },
 }));
 
+// resolveSimItemTypeCandidates is the catalog-regex resolver this fix now routes
+// through — mocked directly so these tests exercise courier.service.ts's own
+// candidate-count handling (0/1/2+), not the resolver's own regex logic
+// (which has its own dedicated test file).
+vi.mock("./sim-item-type-resolver", () => ({
+  resolveSimItemTypeCandidates: vi.fn(),
+}));
+
 import { db } from "@server/core/config/db";
+import { resolveSimItemTypeCandidates } from "./sim-item-type-resolver";
 import { CourierService } from "./courier.service";
 import { AppError } from "@core/errors/AppError";
+
+const mobilyType = { id: "mobilySim", nameEn: "Mobily SIM", nameAr: "شريحة موبايلي", category: "sim" };
+const stcType = { id: "stcSim", nameEn: "STC SIM", nameAr: "شريحة STC", category: "sim" };
 
 function buildServiceWithFakeCtx(opts: {
   reqDataSim: string | null;
@@ -92,9 +98,14 @@ function buildServiceWithFakeCtx(opts: {
   return { service, fakeCtx };
 }
 
-describe("courier.service — silent STC-default classification fix", () => {
+describe("courier.service — catalog-regex SIM classification (no hardcoded carrier keywords)", () => {
+  beforeEach(() => {
+    vi.mocked(resolveSimItemTypeCandidates).mockReset();
+  });
+
   describe("confirmReceiving(): SIM minting hint resolution", () => {
-    it("does NOT silently mint an unrecognized carrier as STC — throws instead", async () => {
+    it("0 regex matches — does NOT silently mint anything, throws instead", async () => {
+      vi.mocked(resolveSimItemTypeCandidates).mockResolvedValue([]);
       const normalizeSerialMock = vi.fn().mockResolvedValue({
         normalizedSerial: "899660000000000001",
         itemTypeId: "stcSim",
@@ -110,7 +121,8 @@ describe("courier.service — silent STC-default classification fix", () => {
       expect(normalizeSerialMock).not.toHaveBeenCalled();
     });
 
-    it("still resolves an explicit STC request correctly (no regression)", async () => {
+    it("exactly 1 regex match (STC) — auto-resolves correctly (no regression)", async () => {
+      vi.mocked(resolveSimItemTypeCandidates).mockResolvedValue([stcType] as any);
       const normalizeSerialMock = vi.fn().mockResolvedValue({
         normalizedSerial: "899660000000000001",
         itemTypeId: "stcSim",
@@ -126,7 +138,8 @@ describe("courier.service — silent STC-default classification fix", () => {
       expect(normalizeSerialMock).toHaveBeenCalledWith("899660000000000001", "stcSim");
     });
 
-    it("still resolves Mobily correctly (unaffected branch)", async () => {
+    it("exactly 1 regex match (Mobily) — auto-resolves correctly (unaffected branch)", async () => {
+      vi.mocked(resolveSimItemTypeCandidates).mockResolvedValue([mobilyType] as any);
       const normalizeSerialMock = vi.fn().mockResolvedValue({
         normalizedSerial: "899660000000000001",
         itemTypeId: "mobilySim",
@@ -141,33 +154,56 @@ describe("courier.service — silent STC-default classification fix", () => {
       await service.confirmReceiving(1, "tech-1");
       expect(normalizeSerialMock).toHaveBeenCalledWith("899660000000000001", "mobilySim");
     });
+
+    it("2+ regex matches (proven real scenario: mobily/stc share a pattern) — ambiguous, throws, never picks one", async () => {
+      vi.mocked(resolveSimItemTypeCandidates).mockResolvedValue([mobilyType, stcType] as any);
+      const normalizeSerialMock = vi.fn();
+      const { service } = buildServiceWithFakeCtx({
+        reqDataSim: "some SIM",
+        itemType: "SIM",
+        normalizeSerialMock,
+      });
+
+      await expect(service.confirmReceiving(1, "tech-1")).rejects.toThrow(AppError);
+      expect(normalizeSerialMock).not.toHaveBeenCalled();
+    });
   });
 
-  describe("linkSimToTechnician(): carrierName fallback fix", () => {
+  describe("linkSimToTechnician(): catalog-driven type + carrierName resolution", () => {
     beforeEach(() => {
       vi.mocked(db.select).mockReset();
     });
 
-    it("throws instead of silently defaulting carrierName to STC when inserting a brand-new SIM with no simType", async () => {
+    it("new item, 0 regex matches, no simType — throws instead of defaulting to STC", async () => {
+      vi.mocked(resolveSimItemTypeCandidates).mockResolvedValue([]);
       const fakeUow = { execute: async (cb: any) => cb({}) } as any;
       const service = new CourierService(fakeUow, {} as any, {} as any, {} as any, {} as any, {} as any);
 
-      vi.mocked(db.select)
-        .mockReturnValueOnce(makeSelectChain([{ id: "mobilySim", category: "sim" }]) as any) // itemTypesList lookup
-        .mockReturnValueOnce(makeSelectChain([]) as any); // existing items lookup -> none found (insert path)
+      vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as any); // existing items lookup -> none found
 
       await expect(
         service.linkSimToTechnician({ simSerial: "899660000000000099" } as any)
       ).rejects.toThrow(AppError);
     });
 
-    it("accepts an explicit simType and does not fall back to STC", async () => {
+    it("new item, 2+ regex matches, no simType — throws (ambiguous), requires explicit simType", async () => {
+      vi.mocked(resolveSimItemTypeCandidates).mockResolvedValue([mobilyType, stcType] as any);
       const fakeUow = { execute: async (cb: any) => cb({}) } as any;
       const service = new CourierService(fakeUow, {} as any, {} as any, {} as any, {} as any, {} as any);
 
-      vi.mocked(db.select)
-        .mockReturnValueOnce(makeSelectChain([{ id: "mobilySim", category: "sim" }]) as any)
-        .mockReturnValueOnce(makeSelectChain([]) as any);
+      vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as any);
+
+      await expect(
+        service.linkSimToTechnician({ simSerial: "899660000000000099" } as any)
+      ).rejects.toThrow(AppError);
+    });
+
+    it("new item, exactly 1 regex match, explicit simType provided — resolves via catalog, carrierName is the explicit value (not STC)", async () => {
+      vi.mocked(resolveSimItemTypeCandidates).mockResolvedValue([mobilyType] as any);
+      const fakeUow = { execute: async (cb: any) => cb({}) } as any;
+      const service = new CourierService(fakeUow, {} as any, {} as any, {} as any, {} as any, {} as any);
+
+      vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as any);
 
       const result = await service.linkSimToTechnician({
         simSerial: "899660000000000099",
@@ -175,19 +211,18 @@ describe("courier.service — silent STC-default classification fix", () => {
       } as any);
 
       expect(result.success).toBe(true);
+      expect(result.item.itemTypeId).toBe("mobilySim");
       expect(result.item.carrierName).toBe("Mobily");
       expect(result.item.carrierName).not.toBe("STC");
     });
 
-    it("update path: keeps the existing stored carrierName when no new simType is sent (not an STC override)", async () => {
+    it("existing item found — keeps its stored itemTypeId AND carrierName verbatim; the catalog resolver is never called (re-deriving on every re-link risks flipping a correctly-classified item under overlapping regexes)", async () => {
       const fakeUow = { execute: async (cb: any) => cb({}) } as any;
       const service = new CourierService(fakeUow, {} as any, {} as any, {} as any, {} as any, {} as any);
 
-      vi.mocked(db.select)
-        .mockReturnValueOnce(makeSelectChain([{ id: "mobilySim", category: "sim" }]) as any)
-        .mockReturnValueOnce(
-          makeSelectChain([{ id: "existing-item-id", carrierName: "Zain" }]) as any
-        ); // existing item found -> update path
+      vi.mocked(db.select).mockReturnValueOnce(
+        makeSelectChain([{ id: "existing-item-id", itemTypeId: "zainSim", carrierName: "Zain" }]) as any
+      );
 
       const result = await service.linkSimToTechnician({
         simSerial: "899660000000000099",
@@ -195,6 +230,7 @@ describe("courier.service — silent STC-default classification fix", () => {
 
       expect(result.success).toBe(true);
       expect(result.item.carrierName).toBe("Zain");
+      expect(resolveSimItemTypeCandidates).not.toHaveBeenCalled();
     });
   });
 });

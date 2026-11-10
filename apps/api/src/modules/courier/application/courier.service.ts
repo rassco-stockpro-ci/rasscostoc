@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { db } from "@server/core/config/db";
-import { items, itemTypes, users, courierExecutions, courierRequests } from "@shared/schema";
+import { items, users, courierExecutions, courierRequests } from "@shared/schema";
 import { eq, or, ilike } from "drizzle-orm";
 import type { ListFilters, CourierRequestItem, CourierExecutionAttempt } from "../domain/courier.types";
 import { devicesContainer } from "@server/composition/devices.container";
@@ -23,6 +23,7 @@ import { ExecutionSavedEvent, ExecutionCompletedEvent } from "@core/events/event
 import { AppError, OptimisticLockException, NotFoundError } from "@core/errors/AppError";
 import { AuditLogFormatter, type AuditLogDto } from "./audit-log-formatter";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
+import { resolveSimItemTypeCandidates } from "./sim-item-type-resolver";
 import type { ICourierRequestsRepository } from "../domain/repositories/ICourierRequestsRepository";
 import type { ICourierExecutionsRepository } from "../domain/repositories/ICourierExecutionsRepository";
 import type { ICourierPdfRepository } from "../domain/repositories/ICourierPdfRepository";
@@ -529,14 +530,15 @@ export class CourierService {
                 else if (typeStr.includes("9100")) hintItemTypeId = "i9100";
                 else hintItemTypeId = "n950";
               } else if (item.itemType === "SIM") {
-                const simStr = String(reqData?.sim || "").toLowerCase();
-                if (simStr.includes("mobily")) hintItemTypeId = "mobilySim";
-                else if (simStr.includes("zain")) hintItemTypeId = "zainSim";
-                else if (simStr.includes("lebara")) hintItemTypeId = "lebaraSim";
-                else if (simStr.includes("stc")) hintItemTypeId = "stcSim";
-                else {
+                const simHintText = String(reqData?.sim || "");
+                const simCandidates = await resolveSimItemTypeCandidates(serial, simHintText);
+                if (simCandidates.length === 1) {
+                  hintItemTypeId = simCandidates[0].id;
+                } else {
                   throw new AppError(
-                    `تعذّر تحديد شركة الشريحة تلقائيًا من بيانات الطلب ("${reqData?.sim ?? ""}"). يجب تحديد شركة الشريحة صراحة قبل المتابعة.`,
+                    simCandidates.length === 0
+                      ? `تعذّر تحديد شركة الشريحة تلقائيًا من السيريال أو بيانات الطلب ("${reqData?.sim ?? ""}"). يجب تحديد شركة الشريحة صراحة قبل المتابعة.`
+                      : `السيريال يطابق أكثر من نوع شريحة محتمل في الكتالوج (${simCandidates.map((c) => c.nameEn).join(", ")}) ولا يمكن حسمه تلقائيًا. يجب تحديد شركة الشريحة صراحة قبل المتابعة.`,
                     400
                   );
                 }
@@ -1905,26 +1907,6 @@ export class CourierService {
       }
     }
 
-    // Get or create itemType for SIM
-    let simTypeId = "";
-    const simTypesList = await db
-      .select()
-      .from(itemTypes)
-      .where(or(eq(itemTypes.category, "sim"), ilike(itemTypes.nameAr, "%شريحة%")))
-      .limit(1);
-
-    if (simTypesList.length > 0) {
-      simTypeId = simTypesList[0].id;
-    } else {
-      const [newType] = await db.insert(itemTypes).values({
-        nameAr: "شريحة اتصال",
-        nameEn: "SIM Card",
-        category: "sim",
-        requiresSerial: true,
-      }).returning();
-      simTypeId = newType.id;
-    }
-
     // Check if already exists in items
     const existing = await db
       .select()
@@ -1932,7 +1914,32 @@ export class CourierService {
       .where(or(eq(items.serialNumber, simSerial), eq(items.barcode, simSerial)))
       .limit(1);
 
-    const resolvedCarrierName = data.simType || (existing.length > 0 ? existing[0].carrierName : undefined);
+    // Resolve item type: an already-classified item keeps its stored type
+    // (re-deriving from the serial on every re-link risks flipping a correctly
+    // classified item if the catalog's regexes overlap, e.g. mobilySim/stcSim).
+    // A genuinely new item is resolved against the live catalog's serialRegex
+    // — never a hardcoded carrier keyword list — and ambiguity is rejected,
+    // not guessed.
+    let simTypeId: string;
+    let carrierNameFromResolution: string | undefined;
+    if (existing.length > 0 && existing[0].itemTypeId) {
+      simTypeId = existing[0].itemTypeId;
+    } else {
+      const simCandidates = await resolveSimItemTypeCandidates(simSerial, data.simType);
+      if (simCandidates.length !== 1) {
+        throw new AppError(
+          simCandidates.length === 0
+            ? "تعذّر تحديد نوع الشريحة من السيريال؛ يجب إرسال simType صريحة أو التأكد من تطابق السيريال لنمط معتمد في كتالوج الأصناف."
+            : `السيريال يطابق أكثر من نوع شريحة محتمل في الكتالوج (${simCandidates.map((c) => c.nameEn).join(", ")})؛ يجب إرسال simType صريحة لحسم الاختيار.`,
+          400
+        );
+      }
+      simTypeId = simCandidates[0].id;
+      carrierNameFromResolution = simCandidates[0].nameEn;
+    }
+
+    const resolvedCarrierName =
+      data.simType || carrierNameFromResolution || (existing.length > 0 ? existing[0].carrierName : undefined);
     if (!resolvedCarrierName) {
       throw new AppError(
         "تعذّر تحديد شركة الشريحة تلقائيًا؛ يجب إرسال simType صريحة عند عدم وجود سجل سابق لهذه الشريحة.",
