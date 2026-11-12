@@ -60,7 +60,7 @@ export class SerializedItemsService {
   ) {
     return await db.transaction(async (tx: any) => {
       // Central Serial Engine: normalize → identify → validate
-      const recognition = await SerialRecognitionService.normalizeForStorage(serialNumber, itemTypeId, tx, { strictHint: true });
+      const recognition = await SerialRecognitionService.normalizeForStorage(serialNumber, itemTypeId, tx, { strictHint: true, requireSerialRule: true });
       const cleanSerial = recognition.normalizedSerial;
       const actualItemTypeId = recognition.itemTypeId;
       const actualCarrierName = carrierName || recognition.carrierName;
@@ -160,7 +160,7 @@ export class SerializedItemsService {
         const { serialNumber, itemTypeId, carrierName, simPackageType } = scanned;
 
         // التعرف على السيريال والتحقق من صحته
-        const recognition = await SerialRecognitionService.recognize(serialNumber, itemTypeId, tx, { strictHint: true });
+        const recognition = await SerialRecognitionService.recognize(serialNumber, itemTypeId, tx, { strictHint: true, requireSerialRule: true });
         const cleanSerial = recognition.normalizedSerial;
         const actualItemTypeId = recognition.itemTypeId;
         const actualCarrierName = carrierName || recognition.carrierName;

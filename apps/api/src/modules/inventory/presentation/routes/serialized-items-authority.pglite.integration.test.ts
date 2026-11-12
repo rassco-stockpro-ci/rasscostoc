@@ -11,8 +11,11 @@
  * identity and the supervisor-assignment lookup are substituted.
  *
  * HONESTY NOTES
- *  - DDL below is hand-mirrored from packages/shared-types/schemas/* — this is
- *    a LOGIC proof, not migration parity with the real Postgres schema.
+ *  - The schema is built by applying the repository's REAL drizzle migration
+ *    SQL files (migrations/meta/_journal.json order) into in-process PGlite
+ *    (PG 16 WASM). That is "real migrations on in-process PGlite" — NOT parity
+ *    with a real PostgreSQL server (no extensions, no server settings, no
+ *    production data/constraints drift, single connection).
  *  - Drizzle is wired through drizzle-orm/pg-proxy; its .transaction() stub
  *    throws, so BEGIN/COMMIT/ROLLBACK are issued by hand in this harness only.
  *  - Needs PGLITE_DIR (a scratch dir OUTSIDE the repo containing
@@ -22,7 +25,8 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
 import express from "express";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import fs from "node:fs";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/pg-proxy";
 
 const holder = vi.hoisted(() => ({ db: null as any, pool: {} as any }));
@@ -61,68 +65,22 @@ import { SerialRecognitionService } from "../../../../core/serial/serial-recogni
 
 const PGLITE_DIR = process.env.PGLITE_DIR;
 
-const DDL = `
-CREATE TABLE users (
-  id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-  username text NOT NULL UNIQUE, email text NOT NULL UNIQUE, password text NOT NULL,
-  full_name text NOT NULL, profile_image text, city text, role text NOT NULL DEFAULT 'technician',
-  region_id varchar, employee_code text, technician_code text, department text, permissions text,
-  is_active boolean NOT NULL DEFAULT true, fcm_token text, telegram_user_id text UNIQUE,
-  created_at timestamp DEFAULT now(), updated_at timestamp DEFAULT now()
-);
-CREATE TABLE warehouses (id varchar PRIMARY KEY DEFAULT gen_random_uuid(), name text);
-CREATE TABLE item_types (
-  id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-  name_ar text NOT NULL, name_en text NOT NULL, category text NOT NULL,
-  units_per_box integer NOT NULL DEFAULT 10, is_active boolean NOT NULL DEFAULT true,
-  is_visible boolean NOT NULL DEFAULT true, sort_order integer NOT NULL DEFAULT 0,
-  icon text, color text, serial_prefix text, serial_length integer, serial_regex text,
-  requires_serial boolean NOT NULL DEFAULT false,
-  created_at timestamp DEFAULT now(), updated_at timestamp DEFAULT now()
-);
-CREATE UNIQUE INDEX item_types_name_ar_unique ON item_types(name_ar);
-CREATE UNIQUE INDEX item_types_name_en_unique ON item_types(name_en);
-CREATE TABLE items (
-  id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_type_id varchar NOT NULL REFERENCES item_types(id),
-  serial_number text NOT NULL UNIQUE, barcode text NOT NULL UNIQUE,
-  status text NOT NULL DEFAULT 'WAREHOUSE',
-  current_owner_id varchar REFERENCES users(id), warehouse_id varchar REFERENCES warehouses(id),
-  carrier_name text, sim_package_type text,
-  created_at timestamp DEFAULT now(), updated_at timestamp DEFAULT now()
-);
-CREATE TABLE inventory_transactions (
-  id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_id varchar NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  transaction_type text NOT NULL, source_owner_id varchar, destination_owner_id varchar,
-  source_warehouse_id varchar, destination_warehouse_id varchar,
-  receiver_name text, order_number text, latitude double precision, longitude double precision,
-  notes text, created_at timestamp DEFAULT now()
-);
-CREATE TABLE item_history_logs (
-  id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_id varchar NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  from_status text NOT NULL, to_status text NOT NULL,
-  changed_by_id varchar NOT NULL REFERENCES users(id),
-  changed_at timestamp DEFAULT now(), notes text
-);
-CREATE TABLE custody_movements (
-  id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_id varchar NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  from_owner_id varchar, to_owner_id varchar, from_warehouse_id varchar, to_warehouse_id varchar,
-  reason text NOT NULL, reference_type text, reference_id varchar,
-  performed_by_id varchar NOT NULL REFERENCES users(id),
-  performed_at timestamp NOT NULL DEFAULT now(),
-  latitude double precision, longitude double precision, notes text
-);
-CREATE TABLE technician_moving_inventory_entries (
-  id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-  technician_id varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  item_type_id varchar NOT NULL REFERENCES item_types(id) ON DELETE CASCADE,
-  boxes integer NOT NULL DEFAULT 0, units integer NOT NULL DEFAULT 0,
-  updated_at timestamp DEFAULT now()
-);
-`;
+/** Applies the repository REAL drizzle migrations (migrations/meta/_journal.json order) into PGlite. */
+function applyRealMigrations(): { files: number; statements: number; failures: string[]; sql: string[] } {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  while (!fs.existsSync(path.join(dir, "migrations", "meta", "_journal.json"))) {
+    const up = path.dirname(dir);
+    if (up === dir) throw new Error("migrations/meta/_journal.json not found");
+    dir = up;
+  }
+  const journal = JSON.parse(fs.readFileSync(path.join(dir, "migrations", "meta", "_journal.json"), "utf8"));
+  const sql: string[] = [];
+  for (const e of journal.entries) {
+    const text = fs.readFileSync(path.join(dir, "migrations", `${e.tag}.sql`), "utf8");
+    for (const stmt of text.split("--> statement-breakpoint")) if (stmt.trim()) sql.push(stmt.trim());
+  }
+  return { files: journal.entries.length, statements: sql.length, failures: [], sql };
+}
 
 // 19-digit ICCIDs matching ^89966[0-9]{14}$ — identical rule for STC and Mobily.
 const SN_MOBILY = "8996600000000000011";
@@ -142,6 +100,7 @@ function buildApp() {
 
 describe.skipIf(!PGLITE_DIR)("item type authority — scan-in -> admin search (PGlite, real code path)", () => {
   let client: any;
+  let migrationReport: { files: number; statements: number; failures: string[] };
   let techA: string;
   let techB: string;
   let supIn: string;
@@ -159,7 +118,11 @@ describe.skipIf(!PGLITE_DIR)("item type authority — scan-in -> admin search (P
     const { PGlite } = await import(/* @vite-ignore */ entry);
     // Keep timestamps as raw strings so Drizzle's own timestamp mapper parses them.
     client = new PGlite({ parsers: { 1114: (v: string) => v, 1184: (v: string) => v } });
-    await client.exec(DDL);
+    const mig = applyRealMigrations();
+    for (const stmt of mig.sql) {
+      try { await client.exec(stmt); } catch (e: any) { mig.failures.push(`${String(e.message).split("\n")[0]} :: ${stmt.slice(0, 80)}`); }
+    }
+    migrationReport = { files: mig.files, statements: mig.statements, failures: mig.failures };
 
     const base = drizzle(async (sql: string, params: any[]) => {
       const r = await client.query(sql, params, { rowMode: "array" });
@@ -313,5 +276,80 @@ describe.skipIf(!PGLITE_DIR)("item type authority — scan-in -> admin search (P
     currentUser = { id: techA, role: "technician" };
     const ok = await request(buildApp()).get(`/api/serialized-items/lookup/${SN_MOBILY}`).expect(200);
     expect(ok.body.data.serialNumber).toBe(SN_MOBILY);
+  });
+
+  it("the schema came from the REAL migrations (all journal files, zero failed statements)", () => {
+    expect(migrationReport.files).toBeGreaterThanOrEqual(27);
+    expect(migrationReport.failures).toEqual([]);
+  });
+
+  describe.each([
+    ["hidden", "UPDATE item_types SET is_visible = false WHERE id = $1"],
+    ["inactive", "UPDATE item_types SET is_active = false WHERE id = $1"],
+  ])("type turned %s AFTER items were stored under it", (label, flipSql) => {
+    const TYPE = `sim-hist-${label}`;
+    const SN_OLD = label === "hidden" ? "8996600000000000101" : "8996600000000000102";
+    const SN_NEW = label === "hidden" ? "8996600000000000111" : "8996600000000000112";
+    const SN_NEW_B = label === "hidden" ? "8996600000000000121" : "8996600000000000122";
+
+    it("new scan-in / batch are rejected (400, no insert) while the old item stays searchable with its original type", async () => {
+      await client.query(
+        `INSERT INTO item_types (id,name_ar,name_en,category,requires_serial,serial_prefix,serial_length,serial_regex)
+         VALUES ($1,$2,$3,'sim',true,'89966',19,'^89966[0-9]{14}$')`,
+        [TYPE, `شريحة تاريخية ${label}`, `Historic SIM ${label}`]
+      );
+      await scanIn(SN_OLD, TYPE).expect(200);
+      expect(await storedType(SN_OLD)).toBe(TYPE);
+
+      await client.query(flipSql, [TYPE]);
+
+      await scanIn(SN_NEW, TYPE).expect(400);
+      expect(await countItems(SN_NEW)).toBe(0);
+
+      currentUser = { id: techA, role: "technician" };
+      await request(buildApp())
+        .post("/api/serialized-items/batch-scan-in")
+        .send({ items: [
+          { serialNumber: SN_NEW, itemTypeId: TYPE },
+          { serialNumber: SN_NEW_B, itemTypeId: "sim-stc" },
+        ] })
+        .expect(400);
+      expect(await countItems(SN_NEW)).toBe(0);
+      expect(await countItems(SN_NEW_B)).toBe(0);
+
+      const rows = await adminSearch(SN_OLD);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].itemTypeId).toBe(TYPE);
+      expect(rows[0].itemTypeNameEn).toBe(`Historic SIM ${label}`);
+      expect(rows[0].itemTypeNameAr).toBe(`شريحة تاريخية ${label}`);
+
+      currentUser = { id: techA, role: "technician" };
+      const lookup = await request(buildApp()).get(`/api/serialized-items/lookup/${SN_OLD}`).expect(200);
+      expect(lookup.body.data.itemTypeNameEn).toBe(`Historic SIM ${label}`);
+    });
+  });
+
+  it("Zain SIM New (no serial_regex) is rejected for scan-in AND batch-scan-in; nothing is stored", async () => {
+    const SN = "8996600000000000201";
+    await scanIn(SN, "sim-zain-new").expect(400);
+    currentUser = { id: techA, role: "technician" };
+    await request(buildApp())
+      .post("/api/serialized-items/batch-scan-in")
+      .send({ items: [{ serialNumber: SN, itemTypeId: "sim-zain-new" }] })
+      .expect(400);
+    expect(await countItems(SN)).toBe(0);
+  });
+
+  it("warehouse-transfer scanSerial: the transfer's item type is the authority — exact type stored, unknown type rejected (no re-typing)", async () => {
+    const { WarehouseTransferService } = await import("../../infrastructure/services/warehouse-transfer.service");
+    const svc = new WarehouseTransferService();
+    const SN_OK = "8996600000000000301";
+    const SN_BAD = "8996600000000000302";
+
+    await svc.scanSerial(techA, "transfer-1", SN_OK, "sim-mobily");
+    expect(await storedType(SN_OK)).toBe("sim-mobily");
+
+    await expect(svc.scanSerial(techA, "transfer-1", SN_BAD, "does-not-exist")).rejects.toThrow(/does-not-exist/);
+    expect(await countItems(SN_BAD)).toBe(0);
   });
 });

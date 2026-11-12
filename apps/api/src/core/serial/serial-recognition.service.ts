@@ -17,6 +17,8 @@ export interface RecognitionResult {
 export interface RecognizeOptions {
   /** When a hintItemTypeId is given: accept exactly that active+visible type or throw; never substitute. */
   strictHint?: boolean;
+  /** Reject (instead of accepting an arbitrary serial) when the resolved type has no valid serialRegex. */
+  requireSerialRule?: boolean;
 }
 
 export interface StoredSerialResolution {
@@ -376,7 +378,7 @@ export class SerialRecognitionService {
           400
         );
       }
-      if (strict && !type.serialRegex) {
+      if (options?.requireSerialRule && !type.serialRegex) {
         throw new AppError(
           `لا توجد صيغة رقم تسلسلي معرّفة للنوع ${type.nameAr}؛ لا يمكن قبول الإدخال حتى تُعرَّف الصيغة`,
           400
@@ -390,7 +392,7 @@ export class SerialRecognitionService {
           }
         } catch (e) {
           if (e instanceof AppError) throw e;
-          if (strict) {
+          if (options?.requireSerialRule) {
             throw new AppError(`صيغة الرقم التسلسلي المعرّفة للنوع ${type.nameAr} غير صالحة`, 400);
           }
         }
