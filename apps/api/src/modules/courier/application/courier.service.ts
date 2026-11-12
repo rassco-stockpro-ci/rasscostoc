@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { db } from "@server/core/config/db";
-import { items, itemTypes, users, courierExecutions, courierRequests } from "@shared/schema";
+import { items, users, courierExecutions, courierRequests } from "@shared/schema";
 import { eq, or, ilike } from "drizzle-orm";
 import type { ListFilters, CourierRequestItem, CourierExecutionAttempt } from "../domain/courier.types";
 import { devicesContainer } from "@server/composition/devices.container";
@@ -23,6 +23,7 @@ import { ExecutionSavedEvent, ExecutionCompletedEvent } from "@core/events/event
 import { AppError, OptimisticLockException, NotFoundError } from "@core/errors/AppError";
 import { AuditLogFormatter, type AuditLogDto } from "./audit-log-formatter";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
+import { resolveSimItemTypeCandidates } from "./sim-item-type-resolver";
 import type { ICourierRequestsRepository } from "../domain/repositories/ICourierRequestsRepository";
 import type { ICourierExecutionsRepository } from "../domain/repositories/ICourierExecutionsRepository";
 import type { ICourierPdfRepository } from "../domain/repositories/ICourierPdfRepository";
@@ -498,10 +499,12 @@ export class CourierService {
         });
       }
 
-      // Fetch request once to resolve device/SIM types if minting is needed
-      const reqData = await ctx.requestsRepository.findRequestById(requestId);
-
-      // 2. Transfer Custody / Mint items in Inventory Engine
+      // 2. Transfer custody of already-registered inventory items.
+      // The item's stored itemTypeId is the only authority for its type: receipt
+      // never derives, guesses or changes it. A serial with no inventory record
+      // has no trusted type (request items carry only a coarse POS/SIM kind and
+      // the request's free-text sim/installation fields), so the receipt is
+      // rejected rather than minting the item under a guessed type.
       for (const item of latestItems) {
         if (item.status === "RECEIVED") {
           const serial = item.serialNumber || item.simSerial;
@@ -509,53 +512,27 @@ export class CourierService {
             // Central Serial Engine: resolve existing row by any equivalent serial form
             const invItem = await ctx.inventoryPort.findItemBySerial(serial);
 
-            if (invItem) {
-              const oldStatus = invItem.status;
-
-              // Update item status & current owner & Record transaction & item history log
-              await ctx.inventoryPort.transferCustodyToTechnician({
-                itemId: invItem.id,
-                technicianId: actorId,
-                requestId,
-                oldStatus,
-                newStatus: "RECEIVED_BY_TECHNICIAN"
-              });
-            } else {
-              // MINTING: first scan in quantity-only flow — normalize before storage
-              let hintItemTypeId = "n950";
-              if (item.itemType === "POS") {
-                const typeStr = String(reqData?.installationType || "").toLowerCase();
-                if (typeStr.includes("9000")) hintItemTypeId = "i9000s";
-                else if (typeStr.includes("9100")) hintItemTypeId = "i9100";
-                else hintItemTypeId = "n950";
-              } else if (item.itemType === "SIM") {
-                const simStr = String(reqData?.sim || "").toLowerCase();
-                if (simStr.includes("mobily")) hintItemTypeId = "mobilySim";
-                else if (simStr.includes("zain")) hintItemTypeId = "zainSim";
-                else if (simStr.includes("lebara")) hintItemTypeId = "lebaraSim";
-                else hintItemTypeId = "stcSim";
-              }
-
-              const stored = await ctx.inventoryPort.normalizeSerial(
-                serial,
-                hintItemTypeId
+            if (!invItem) {
+              throw new AppError(
+                `الرقم التسلسلي ${serial} غير مسجل في المخزون، ولا يوجد نوع صنف معتمد له. يجب تسجيل الصنف بنوعه الصحيح في المخزون قبل تأكيد الاستلام.`,
+                400
               );
-
-              // Persist normalized form on request item for downstream deduction/guards
-              if (item.serialNumber) {
-                await ctx.requestsRepository.updateRequestItem(item.id, { serialNumber: stored.normalizedSerial });
-              } else if (item.simSerial) {
-                await ctx.requestsRepository.updateRequestItem(item.id, { simSerial: stored.normalizedSerial });
-              }
-
-              await ctx.inventoryPort.mintAndAssignToTechnician({
-                serial: stored.normalizedSerial,
-                itemTypeId: stored.itemTypeId,
-                carrierName: stored.carrierName,
-                technicianId: actorId,
-                requestId
-              });
             }
+
+            // Idempotent: progressive receipt re-processes every RECEIVED item on
+            // each call, so an item already in this technician's custody must not
+            // get a second transaction/history/custody movement.
+            const alreadyHeldByActor =
+              invItem.currentOwnerId === actorId && invItem.status === "RECEIVED_BY_TECHNICIAN";
+            if (alreadyHeldByActor) continue;
+
+            await ctx.inventoryPort.transferCustodyToTechnician({
+              itemId: invItem.id,
+              technicianId: actorId,
+              requestId,
+              oldStatus: invItem.status,
+              newStatus: "RECEIVED_BY_TECHNICIAN"
+            });
           }
         }
       }
@@ -1899,26 +1876,6 @@ export class CourierService {
       }
     }
 
-    // Get or create itemType for SIM
-    let simTypeId = "";
-    const simTypesList = await db
-      .select()
-      .from(itemTypes)
-      .where(or(eq(itemTypes.category, "sim"), ilike(itemTypes.nameAr, "%شريحة%")))
-      .limit(1);
-
-    if (simTypesList.length > 0) {
-      simTypeId = simTypesList[0].id;
-    } else {
-      const [newType] = await db.insert(itemTypes).values({
-        nameAr: "شريحة اتصال",
-        nameEn: "SIM Card",
-        category: "sim",
-        requiresSerial: true,
-      }).returning();
-      simTypeId = newType.id;
-    }
-
     // Check if already exists in items
     const existing = await db
       .select()
@@ -1926,12 +1883,51 @@ export class CourierService {
       .where(or(eq(items.serialNumber, simSerial), eq(items.barcode, simSerial)))
       .limit(1);
 
+    // Resolve item type: an already-classified item keeps its stored type
+    // (re-deriving from the serial on every re-link risks flipping a correctly
+    // classified item when catalog regexes overlap). A genuinely new item needs
+    // the caller's explicit simType, which must agree with exactly one live
+    // catalog type whose serialRegex accepts the serial — the server never
+    // picks a type on its own, even when only one regex happens to match.
+    let simTypeId: string;
+    let carrierNameFromResolution: string | undefined;
+    if (existing.length > 0 && existing[0].itemTypeId) {
+      simTypeId = existing[0].itemTypeId;
+    } else {
+      if (!data.simType || !data.simType.trim()) {
+        throw new AppError(
+          "شريحة جديدة غير مسجلة: يجب إرسال نوع الشريحة (simType) صراحة؛ لا يحدد الخادم النوع تلقائيًا.",
+          400
+        );
+      }
+      const simCandidates = await resolveSimItemTypeCandidates(simSerial, data.simType);
+      if (simCandidates.length !== 1) {
+        throw new AppError(
+          simCandidates.length === 0
+            ? "تعذّر تحديد نوع الشريحة من السيريال؛ يجب إرسال simType صريحة أو التأكد من تطابق السيريال لنمط معتمد في كتالوج الأصناف."
+            : `السيريال يطابق أكثر من نوع شريحة محتمل في الكتالوج (${simCandidates.map((c) => c.nameEn).join(", ")})؛ يجب إرسال simType صريحة لحسم الاختيار.`,
+          400
+        );
+      }
+      simTypeId = simCandidates[0].id;
+      carrierNameFromResolution = simCandidates[0].nameEn;
+    }
+
+    const resolvedCarrierName =
+      data.simType || carrierNameFromResolution || (existing.length > 0 ? existing[0].carrierName : undefined);
+    if (!resolvedCarrierName) {
+      throw new AppError(
+        "تعذّر تحديد شركة الشريحة تلقائيًا؛ يجب إرسال simType صريحة عند عدم وجود سجل سابق لهذه الشريحة.",
+        400
+      );
+    }
+
     if (existing.length > 0) {
       const [updated] = await db
         .update(items)
         .set({
           currentOwnerId: targetOwnerId || existing[0].currentOwnerId,
-          carrierName: data.simType || existing[0].carrierName || "STC",
+          carrierName: resolvedCarrierName,
           status: "RECEIVED_BY_TECHNICIAN",
           updatedAt: new Date(),
         })
@@ -1949,7 +1945,7 @@ export class CourierService {
       itemTypeId: simTypeId,
       serialNumber: simSerial,
       barcode: simSerial,
-      carrierName: data.simType || "STC",
+      carrierName: resolvedCarrierName,
       currentOwnerId: targetOwnerId,
       status: targetOwnerId ? "RECEIVED_BY_TECHNICIAN" : "WAREHOUSE",
     }).returning();

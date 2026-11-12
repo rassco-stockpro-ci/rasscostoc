@@ -655,3 +655,5 @@ export class ItemTypesService {
     };
   }
 }
+
+export const itemTypesService = new ItemTypesService();

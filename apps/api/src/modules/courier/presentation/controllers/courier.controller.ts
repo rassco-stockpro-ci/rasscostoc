@@ -534,7 +534,7 @@ export class CourierController {
 
     const result = await this.service.linkSimToTechnician({
       simSerial: serial,
-      simType: simType || sim_type || "STC",
+      simType: simType || sim_type,
       technicianId: technicianId || technician_id,
       technicianUsername: technicianUsername || technician_code,
       notes,
