@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { requireAuth } from "@core/middlewares/auth.middleware";
+import { requireTechnicianScope } from "@core/middlewares/technician-scope.middleware";
+import { requireItemStatusAuthority } from "@core/middlewares/item-status-authority.middleware";
 import { inventoryContainer } from "@server/composition/inventory.container";
 import { normalizeCreateWarehouseTransferPayload } from "@modules/inventory/application/inventory/use-cases/WarehouseTransferOperations.use-case";
 
@@ -76,10 +78,10 @@ export function registerWarehouseTransferOperationsRoutes(app: Express): void {
   app.post("/api/warehouse-transfers/:id/confirm-receipt", requireAuth, controller.confirmReceipt);
 
   // جلب الأرقام التسلسلية لعهدة الفني
-  app.get("/api/technicians/:technicianId/serialized-items", requireAuth, controller.getTechnicianSerializedItems);
+  app.get("/api/technicians/:technicianId/serialized-items", requireAuth, requireTechnicianScope, controller.getTechnicianSerializedItems);
 
   // سجل التسليم من عهدة الفني (items + custody_movements)
-  app.get("/api/technicians/:technicianId/delivered-items", requireAuth, controller.getTechnicianDeliveredItems);
+  app.get("/api/technicians/:technicianId/delivered-items", requireAuth, requireTechnicianScope, controller.getTechnicianDeliveredItems);
 
   // بحث الأدمن بالسيريال (لصفحة التحقق) — عبر Central Serial Engine
   app.get("/api/items/lookup/:serialNumber", requireAuth, controller.lookupSerial);
@@ -88,5 +90,5 @@ export function registerWarehouseTransferOperationsRoutes(app: Express): void {
   app.get("/api/verification/assets/:identifier", requireAuth, controller.lookupAssetTracking);
 
   // تحديث حالة السيريال من الأدمن (باستخدام محرك العهدة الموحد)
-  app.patch("/api/items/:id/status", requireAuth, controller.updateItemStatus);
+  app.patch("/api/items/:id/status", requireAuth, requireItemStatusAuthority, controller.updateItemStatus);
 }

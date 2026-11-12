@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { requireAuth } from "@core/middlewares/auth.middleware";
+import { requireAuth, requireAdmin, requireSupervisor } from "@core/middlewares/auth.middleware";
 import {
   InventoryRequestsManagementUseCaseError,
 } from "@modules/inventory/application/inventory-requests/use-cases/InventoryRequestsManagement.use-case";
@@ -12,10 +12,14 @@ import { inventoryRequestsManagementContainer } from "@server/composition/invent
 export function registerInventoryRequestsManagementRoutes(app: Express): void {
 
   // تحديث حالة طلب المخزون (موافقة/رفض)
-  app.patch("/api/inventory-requests/:id/status", requireAuth, async (req, res) => {
+  app.patch("/api/inventory-requests/:id/status", requireAuth, requireSupervisor, async (req, res) => {
     try {
       const user = (req as any).user;
       const { status, adminNotes } = req.body;
+      await inventoryRequestsManagementContainer.inventoryRequestsManagementUseCase.assertCanUpdateStatus(
+        req.params.id,
+        { role: user.role, regionId: user.regionId ?? null },
+      );
       const updatedRequest = await inventoryRequestsManagementContainer.inventoryRequestsManagementUseCase.updateStatus({
         id: req.params.id,
         status,
@@ -54,7 +58,7 @@ export function registerInventoryRequestsManagementRoutes(app: Express): void {
   });
 
   // حذف طلب المخزون
-  app.delete("/api/inventory-requests/:id", requireAuth, async (req, res) => {
+  app.delete("/api/inventory-requests/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = (req as any).user;
       await inventoryRequestsManagementContainer.inventoryRequestsManagementUseCase.deleteRequest(req.params.id);

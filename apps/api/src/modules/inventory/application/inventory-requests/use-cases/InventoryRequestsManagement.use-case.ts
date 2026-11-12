@@ -19,6 +19,25 @@ export class InventoryRequestsManagementUseCaseError extends Error {
 export class InventoryRequestsManagementUseCase {
   constructor(private readonly repository: IInventoryRequestsManagementRepository) {}
 
+  /**
+   * Same scope model as ApproveInventoryRequestUseCase: admin, or a supervisor
+   * whose region matches the request's technician. Everyone else is denied.
+   */
+  async assertCanUpdateStatus(id: string, actor: { role: string; regionId: string | null }): Promise<void> {
+    if (actor.role !== 'admin' && actor.role !== 'supervisor') {
+      throw new InventoryRequestsManagementUseCaseError(403, 'غير مصرح لك بمعالجة طلبات المخزون');
+    }
+
+    const scope = await this.repository.getRequestScope(id);
+    if (!scope) {
+      throw new InventoryRequestsManagementUseCaseError(404, 'Inventory request not found');
+    }
+
+    if (actor.role === 'supervisor' && (!actor.regionId || scope.technicianRegionId !== actor.regionId)) {
+      throw new InventoryRequestsManagementUseCaseError(403, 'لا يمكنك معالجة طلبات من خارج منطقتك');
+    }
+  }
+
   async updateStatus(input: UpdateInventoryRequestStatusInput): Promise<InventoryRequest> {
     if (!VALID_STATUSES.includes(input.status)) {
       throw new InventoryRequestsManagementUseCaseError(

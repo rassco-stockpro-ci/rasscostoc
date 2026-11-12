@@ -7,7 +7,13 @@ export type UpdateInventoryRequestStatusInput = {
   adminNotes?: string;
 };
 
+export type InventoryRequestScope = {
+  technicianId: string;
+  technicianRegionId: string | null;
+};
+
 export interface IInventoryRequestsManagementRepository {
   updateStatus(input: UpdateInventoryRequestStatusInput): Promise<InventoryRequest>;
   deleteById(id: string): Promise<boolean>;
+  getRequestScope(id: string): Promise<InventoryRequestScope | undefined>;
 }
