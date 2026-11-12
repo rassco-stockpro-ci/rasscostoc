@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { technicianFixedInventoryEntries, systemLogs } from "@shared/schema";
+import { technicianFixedInventoryEntries, systemLogs, itemTypes } from "@shared/schema";
 
 const mockTransaction = vi.fn();
 
@@ -21,6 +21,7 @@ import { ConflictError } from "@core/errors/AppError";
 function makeChain(result: any) {
   const chain: any = {
     where: vi.fn(() => chain),
+    limit: vi.fn(() => chain),
     then: (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject),
   };
   return chain;
@@ -29,9 +30,12 @@ function makeChain(result: any) {
 type TxOpts = {
   existingEntry?: any;
   updateReturning?: any[];
+  itemType?: any;
 };
 
-function createMockTx({ existingEntry = null, updateReturning }: TxOpts) {
+const DEFAULT_ITEM_TYPE = { requiresSerial: false, isActive: true, isVisible: true, nameAr: "صنف اختبار" };
+
+function createMockTx({ existingEntry = null, updateReturning, itemType = DEFAULT_ITEM_TYPE }: TxOpts) {
   const insertValuesMock = vi.fn(() => ({
     returning: vi.fn(() => Promise.resolve([
       { id: "entry-new", technicianId: "tech-1", itemTypeId: "type-x", boxes: 5, units: 5 },
@@ -50,6 +54,7 @@ function createMockTx({ existingEntry = null, updateReturning }: TxOpts) {
     select: vi.fn(() => ({
       from: vi.fn((table: any) => {
         if (table === technicianFixedInventoryEntries) return makeChain(existingEntry ? [existingEntry] : []);
+        if (table === itemTypes) return makeChain(itemType ? [itemType] : []);
         return makeChain([]);
       }),
     })),

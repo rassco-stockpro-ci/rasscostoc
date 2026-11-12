@@ -20,7 +20,7 @@ export async function syncMovingInventory(
   if (!technicianId || !itemTypeId || delta === 0) return;
 
   const [existingEntry] = await tx
-    .select()
+    .select({ id: technicianMovingInventoryEntries.id, units: technicianMovingInventoryEntries.units })
     .from(technicianMovingInventoryEntries)
     .where(
       and(

@@ -200,6 +200,8 @@ export const technicianMovingInventoryEntries = pgTable("technician_moving_inven
   boxes: integer("boxes").notNull().default(0),
   units: integer("units").notNull().default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
+  /** Optimistic-lock token — same reasoning as technician_fixed_inventory_entries.version (see that column's comment). Schema change only, no migration run. */
+  version: integer("version").notNull().default(0),
 }, (table) => ({
   movingEntriesTechIdx: index("moving_entries_tech_idx").on(table.technicianId),
   movingEntriesItemIdx: index("moving_entries_item_idx").on(table.itemTypeId),

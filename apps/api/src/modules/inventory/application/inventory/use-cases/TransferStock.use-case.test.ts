@@ -109,6 +109,23 @@ class InMemoryTransferRepository implements ITechnicianInventoryTransferReposito
     return created;
   }
 
+  private replayedKeys = new Set<string>();
+
+  async assertQuantityTrackable(_itemTypeId: string, _quantity: number): Promise<void> {
+    // Test double: the requires_serial/hidden/integer DB lookup is covered
+    // by the real-SQL guard tests (quantity-entry-guards + the PGlite
+    // suites) — this in-memory fake has no item_types table to check
+    // against, so it's a deliberate no-op here, not a gap in coverage.
+  }
+
+  async findIdempotentTransferReplay(idempotencyKey: string): Promise<{ matched: true } | null> {
+    return this.replayedKeys.has(idempotencyKey) ? { matched: true } : null;
+  }
+
+  async recordTransferMovement(params: { idempotencyKey: string }): Promise<void> {
+    this.replayedKeys.add(params.idempotencyKey);
+  }
+
   clone(): InMemoryTransferRepository {
     const cloned = new InMemoryTransferRepository();
     for (const [key, value] of this.balances.entries()) {
@@ -117,12 +134,14 @@ class InMemoryTransferRepository implements ITechnicianInventoryTransferReposito
     for (const [key, value] of this.inventories.entries()) {
       cloned.inventories.set(key, { ...value });
     }
+    cloned.replayedKeys = new Set(this.replayedKeys);
     return cloned;
   }
 
   applyFrom(source: InMemoryTransferRepository): void {
     this.balances = new Map(source.balances);
     this.inventories = new Map(source.inventories);
+    this.replayedKeys = new Set(source.replayedKeys);
   }
 }
 
@@ -220,6 +239,8 @@ describe('TransferStockUseCase', () => {
       fromInventory: 'fixed',
       toInventory: 'moving',
       performedBy: 'admin-1',
+      actor: { id: 'admin-1', username: 'admin', role: 'admin' },
+      idempotencyKey: 'transfer-test-key-0001',
       reason: 'Rebalance',
     });
 
@@ -252,6 +273,8 @@ describe('TransferStockUseCase', () => {
         fromInventory: 'fixed',
         toInventory: 'fixed',
         performedBy: 'admin-1',
+        actor: { id: 'admin-1', username: 'admin', role: 'admin' },
+        idempotencyKey: 'transfer-test-key-0002',
       })
     ).rejects.toThrowError(SameInventoryTransferError);
   });
@@ -282,6 +305,8 @@ describe('TransferStockUseCase', () => {
         fromInventory: 'fixed',
         toInventory: 'moving',
         performedBy: 'admin-1',
+        actor: { id: 'admin-1', username: 'admin', role: 'admin' },
+        idempotencyKey: 'transfer-test-key-0003',
       })
     ).rejects.toThrowError(InsufficientStockError);
 
@@ -323,6 +348,8 @@ describe('TransferStockUseCase', () => {
         fromInventory: 'fixed',
         toInventory: 'moving',
         performedBy: 'admin-1',
+        actor: { id: 'admin-1', username: 'admin', role: 'admin' },
+        idempotencyKey: 'transfer-test-key-0004',
       })
     ).rejects.toThrowError('Failed to create stock movement');
 

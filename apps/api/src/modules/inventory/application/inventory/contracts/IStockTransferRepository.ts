@@ -11,6 +11,8 @@ export type StockTransferInput = {
   performedBy: string;
   reason?: string;
   notes?: string;
+  actor: { id: string; username: string; role: string };
+  idempotencyKey: string;
 };
 
 export type StockTransferOutput = {

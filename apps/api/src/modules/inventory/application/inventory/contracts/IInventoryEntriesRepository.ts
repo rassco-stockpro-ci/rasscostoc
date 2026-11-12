@@ -31,5 +31,10 @@ export interface IInventoryEntriesRepository {
   ): Promise<TechnicianFixedInventoryEntry>;
 
   getTechnicianMovingEntries(technicianId: string): Promise<TechnicianMovingInventoryEntry[]>;
-  upsertTechnicianMovingEntry(technicianId: string, input: InventoryEntryInput): Promise<TechnicianMovingInventoryEntry>;
+  upsertTechnicianMovingEntry(
+    technicianId: string,
+    input: InventoryEntryInput,
+    actor: InventoryEntryActor,
+    idempotencyKey: string,
+  ): Promise<TechnicianMovingInventoryEntry>;
 }
