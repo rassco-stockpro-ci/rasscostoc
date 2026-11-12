@@ -45,65 +45,6 @@ export class CustodyEngine {
   }
 
   /**
-   * 2. مسح وتسجيل عهدة الجهاز للفني (Scan Intake)
-   */
-  static async scanItem(
-    serialNumber: string,
-    itemTypeId: string,
-    technicianId: string,
-    tx: any = db
-  ) {
-    const stored = await SerialRecognitionService.normalizeForStorage(serialNumber, itemTypeId, tx);
-    const cleanSerial = stored.normalizedSerial;
-    const actualTypeId = stored.itemTypeId;
-
-    const existing = await this.lookupItem(cleanSerial, tx);
-
-    if (existing) {
-      if (existing.status === "DELIVERED") {
-        throw new Error("المنتج موجود وحالته مغلق");
-      } else {
-        throw new Error("المنتج موجود مسبقاً وحالته نشط");
-      }
-    }
-
-    // توليد باركود تلقائي مطابق للسيريال المخزَّن
-    const [inserted] = await tx
-      .insert(items)
-      .values({
-        itemTypeId: actualTypeId,
-        serialNumber: cleanSerial,
-        barcode: cleanSerial,
-        status: "RECEIVED_BY_TECHNICIAN",
-        currentOwnerId: technicianId,
-        carrierName: stored.carrierName,
-      })
-      .returning({ id: items.id });
-
-    // تسجيل الحركة
-    await tx.insert(inventoryTransactions).values({
-      itemId: inserted.id,
-      transactionType: "INTAKE",
-      destinationOwnerId: technicianId,
-      notes: "تم إدخال جهاز جديد للعهدة لأول مرة بالمسح الميداني",
-    });
-
-    // تسجيل في دفتر العهدة الدائم (Custody Ledger)
-    await tx.insert(custodyMovements).values({
-      itemId: inserted.id,
-      fromOwnerId: null,
-      toOwnerId: technicianId,
-      reason: "INTAKE",
-      performedById: technicianId,
-      notes: "إنشاء وتسجيل عهدة جديدة بالمسح الميداني",
-    });
-
-    await this.syncMovingInventory(tx, technicianId, actualTypeId, 1);
-
-    return { id: inserted.id, action: "inserted" };
-  }
-
-  /**
    * 3. المعاملة الذرية لإغلاق المعاملة وتسليم الجهاز للعميل (Delivery/Install Closure)
    */
   static async deliverItem(

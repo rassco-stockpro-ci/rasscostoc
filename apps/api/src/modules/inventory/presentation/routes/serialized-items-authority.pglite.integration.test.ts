@@ -24,10 +24,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
 import express from "express";
-import path from "node:path";
-import fs from "node:fs";
-import { pathToFileURL, fileURLToPath } from "node:url";
-import { drizzle } from "drizzle-orm/pg-proxy";
 
 const holder = vi.hoisted(() => ({ db: null as any, pool: {} as any }));
 
@@ -60,27 +56,11 @@ vi.mock("@server/composition/supervisor-assignments.container", () => ({
 }));
 
 import { registerSerializedItemsRoutes } from "./serialized-items.routes";
+import { createPgliteWithRealMigrations } from "./pglite-test-harness";
 import { errorHandler } from "../../../../core/errors/errorHandler";
 import { SerialRecognitionService } from "../../../../core/serial/serial-recognition.service";
 
 const PGLITE_DIR = process.env.PGLITE_DIR;
-
-/** Applies the repository REAL drizzle migrations (migrations/meta/_journal.json order) into PGlite. */
-function applyRealMigrations(): { files: number; statements: number; failures: string[]; sql: string[] } {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  while (!fs.existsSync(path.join(dir, "migrations", "meta", "_journal.json"))) {
-    const up = path.dirname(dir);
-    if (up === dir) throw new Error("migrations/meta/_journal.json not found");
-    dir = up;
-  }
-  const journal = JSON.parse(fs.readFileSync(path.join(dir, "migrations", "meta", "_journal.json"), "utf8"));
-  const sql: string[] = [];
-  for (const e of journal.entries) {
-    const text = fs.readFileSync(path.join(dir, "migrations", `${e.tag}.sql`), "utf8");
-    for (const stmt of text.split("--> statement-breakpoint")) if (stmt.trim()) sql.push(stmt.trim());
-  }
-  return { files: journal.entries.length, statements: sql.length, failures: [], sql };
-}
 
 // 19-digit ICCIDs matching ^89966[0-9]{14}$ — identical rule for STC and Mobily.
 const SN_MOBILY = "8996600000000000011";
@@ -112,35 +92,10 @@ describe.skipIf(!PGLITE_DIR)("item type authority — scan-in -> admin search (P
     (await client.query("SELECT item_type_id FROM items WHERE serial_number = $1", [serial])).rows[0]?.item_type_id;
 
   beforeAll(async () => {
-    const entry = pathToFileURL(
-      path.join(PGLITE_DIR!, "node_modules", "@electric-sql", "pglite", "dist", "index.js")
-    ).href;
-    const { PGlite } = await import(/* @vite-ignore */ entry);
-    // Keep timestamps as raw strings so Drizzle's own timestamp mapper parses them.
-    client = new PGlite({ parsers: { 1114: (v: string) => v, 1184: (v: string) => v } });
-    const mig = applyRealMigrations();
-    for (const stmt of mig.sql) {
-      try { await client.exec(stmt); } catch (e: any) { mig.failures.push(`${String(e.message).split("\n")[0]} :: ${stmt.slice(0, 80)}`); }
-    }
-    migrationReport = { files: mig.files, statements: mig.statements, failures: mig.failures };
-
-    const base = drizzle(async (sql: string, params: any[]) => {
-      const r = await client.query(sql, params, { rowMode: "array" });
-      return { rows: r.rows };
-    });
-    const wrapped: any = Object.create(base);
-    wrapped.transaction = async (cb: (tx: any) => Promise<any>) => {
-      await client.exec("BEGIN");
-      try {
-        const out = await cb(base);
-        await client.exec("COMMIT");
-        return out;
-      } catch (e) {
-        await client.exec("ROLLBACK");
-        throw e;
-      }
-    };
-    holder.db = wrapped;
+    const h = await createPgliteWithRealMigrations(PGLITE_DIR!);
+    client = h.client;
+    migrationReport = h.report;
+    holder.db = h.db;
 
     const user = async (name: string, role: string) =>
       (await client.query(

@@ -3,6 +3,9 @@ import { items, itemTypes, inventoryTransactions, itemHistoryLogs, warehouseTran
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { CustodyEngine } from "./custody-engine";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
+import { AppError } from "@core/errors/AppError";
+
+const transferScanNote = (transferId: string) => `مسح فردي - استلام العهدة (transfer: ${transferId})`;
 
 export class WarehouseTransferService {
   async getWarehouseTransferById(id: string) {
@@ -14,11 +17,69 @@ export class WarehouseTransferService {
     return transfer || null;
   }
 
+  /** Number of items already received by serial scan for this transfer (exact marker written by scanSerial). */
+  private async countScannedForTransfer(transferId: string): Promise<number> {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(inventoryTransactions)
+      .where(
+        and(
+          eq(inventoryTransactions.transactionType, "INTAKE"),
+          eq(inventoryTransactions.notes, transferScanNote(transferId))
+        )
+      );
+    return Number(row?.n ?? 0);
+  }
+
+  /**
+   * Narrow exception: an accepted transfer whose item type was hidden/deactivated AFTER the transfer
+   * was created may still be completed — only with that transfer's own type and only up to the
+   * transfer's quantity. Returns false for active types (normal strict path applies).
+   * Limitation: there is no hidden_at history, so "created before retirement" is approximated by
+   * transfer.created_at < item_types.updated_at (hide/deactivate go through updateItemType, which
+   * bumps updated_at); transfers carry no serial list, so membership is bounded by quantity only.
+   */
+  private async canCompleteTransferOfRetiredType(
+    transferId: string,
+    type: typeof itemTypes.$inferSelect
+  ): Promise<boolean> {
+    if (type.isActive && type.isVisible) return false;
+
+    const transfer = await this.getWarehouseTransferById(transferId);
+    if (!transfer || transfer.itemType !== type.id) return false;
+    if (!transfer.createdAt || !type.updatedAt) return false;
+    if (!(new Date(transfer.createdAt).getTime() < new Date(type.updatedAt).getTime())) return false;
+
+    const expected =
+      transfer.packagingType === "box" || transfer.packagingType === "boxes"
+        ? transfer.quantity * (type.unitsPerBox || 1)
+        : transfer.quantity;
+    if ((await this.countScannedForTransfer(transferId)) >= expected) {
+      throw new AppError(
+        `اكتمل استلام كمية التحويل (${expected})؛ لا يمكن إضافة أصناف أخرى من النوع غير المفعّل ${type.nameAr}`,
+        400
+      );
+    }
+    return true;
+  }
+
   async scanSerial(userId: string, transferId: string, serialNumber: string, itemType: string) {
     const sn = serialNumber.trim();
 
-    // 1. recognize serial
-    const recognition = await SerialRecognitionService.recognize(sn, itemType, db, { strictHint: true });
+    const [type] = await db.select().from(itemTypes).where(eq(itemTypes.id, itemType)).limit(1);
+    if (!type) {
+      throw new AppError(`نوع الصنف المحدد (${itemType}) غير موجود`, 400);
+    }
+    if (!type.requiresSerial) {
+      throw new AppError(`النوع ${type.nameAr} يُتتبَّع بالكمية ولا يُستلم بمسح الرقم التسلسلي`, 400);
+    }
+    const completingRetiredTransfer = await this.canCompleteTransferOfRetiredType(transferId, type);
+
+    // 1. recognize serial — the transfer's type is the authority (never substituted)
+    const recognition = await SerialRecognitionService.recognize(sn, itemType, db, {
+      strictHint: true,
+      allowRetiredHintedType: completingRetiredTransfer,
+    });
     const cleanSerial = recognition.normalizedSerial;
     const actualItemTypeId = recognition.itemTypeId;
 
@@ -68,7 +129,7 @@ export class WarehouseTransferService {
       itemId: item.id,
       transactionType: "INTAKE",
       destinationOwnerId: userId,
-      notes: `مسح فردي - استلام العهدة (transfer: ${transferId})`,
+      notes: transferScanNote(transferId),
     });
 
     await db.insert(itemHistoryLogs).values({
@@ -88,29 +149,20 @@ export class WarehouseTransferService {
   }
 
   async confirmReceipt(userId: string, transferId: string, itemType: string, quantity: number, packagingType: string | null) {
-    const serializedCategories = ["n950", "i9000s", "i9100", "mobilySim", "stcSim", "zainSim", "lebara", "lebaraSim"];
-    const isSerialized = serializedCategories.includes(itemType);
+    // Tracking mode comes from item_types.requires_serial (not a hard-coded id list).
+    const [type] = await db
+      .select({ requiresSerial: itemTypes.requiresSerial, unitsPerBox: itemTypes.unitsPerBox })
+      .from(itemTypes)
+      .where(eq(itemTypes.id, itemType))
+      .limit(1);
+    const isSerialized = !!type?.requiresSerial;
 
     if (isSerialized) {
-      const scannedItems = await db
-        .select()
-        .from(items)
-        .where(
-          and(
-            eq(items.currentOwnerId, userId),
-            eq(items.status, "RECEIVED_BY_TECHNICIAN"),
-            eq(items.itemTypeId, itemType)
-          )
-        );
-
-      const recentlyScanned = scannedItems.filter(item => {
-        if (!item.createdAt) return false;
-        const diff = Date.now() - new Date(item.createdAt).getTime();
-        return diff < 48 * 60 * 60 * 1000;
-      });
-
-      if (recentlyScanned.length < quantity) {
-        throw new Error(`تم مسح ${recentlyScanned.length} فقط من أصل ${quantity} مطلوبة. أكمل المسح أولاً.`);
+      const expected =
+        packagingType === "box" || packagingType === "boxes" ? quantity * (type!.unitsPerBox || 1) : quantity;
+      const scannedForTransfer = await this.countScannedForTransfer(transferId);
+      if (scannedForTransfer < expected) {
+        throw new AppError(`تم مسح ${scannedForTransfer} فقط من أصل ${expected} مطلوبة. أكمل المسح أولاً.`, 400);
       }
     }
 
@@ -128,45 +180,14 @@ export class WarehouseTransferService {
         await processWarehouseTransferBatch(context, [transferId]);
       });
     } else {
-      await db.transaction(async (tx) => {
-        await tx
-          .update(warehouseTransfers)
-          .set({ status: "approved", respondedAt: new Date() })
-          .where(eq(warehouseTransfers.id, transferId));
-
-        const [existingEntry] = await tx
-          .select()
-          .from(technicianMovingInventoryEntries)
-          .where(
-            and(
-              eq(technicianMovingInventoryEntries.technicianId, userId),
-              eq(technicianMovingInventoryEntries.itemTypeId, itemType)
-            )
-          )
-          .limit(1);
-
-        const isBoxes = packagingType === "box" || packagingType === "boxes";
-        const addUnits = isBoxes ? 0 : quantity;
-        const addBoxes = isBoxes ? quantity : 0;
-
-        if (existingEntry) {
-          await tx
-            .update(technicianMovingInventoryEntries)
-            .set({
-              units: sql`${technicianMovingInventoryEntries.units} + ${addUnits}`,
-              boxes: sql`${technicianMovingInventoryEntries.boxes} + ${addBoxes}`,
-              updatedAt: new Date(),
-            })
-            .where(eq(technicianMovingInventoryEntries.id, existingEntry.id));
-        } else {
-          await tx.insert(technicianMovingInventoryEntries).values({
-            technicianId: userId,
-            itemTypeId: itemType,
-            units: addUnits,
-            boxes: addBoxes,
-          });
-        }
-      });
+      // An "accepted" transfer was already credited to the technician's moving inventory by
+      // processWarehouseTransferBatch at accept time (+quantity, warehouse debited). Confirming
+      // receipt only closes the transfer: crediting again here double-counted every transfer.
+      // The conditional status flip makes a repeated/concurrent confirm a no-op.
+      await db
+        .update(warehouseTransfers)
+        .set({ status: "approved", respondedAt: new Date() })
+        .where(and(eq(warehouseTransfers.id, transferId), eq(warehouseTransfers.status, "accepted")));
     }
 
     return {

@@ -48,66 +48,6 @@ describe('CustodyEngine Unit Tests', () => {
     });
   });
 
-  describe('scanItem', () => {
-    it('creates new item and registers custody when not exists', async () => {
-      vi.mocked(SerialRecognitionService.normalizeForStorage).mockResolvedValue({
-        normalizedSerial: 'SN123',
-        itemTypeId: 'type-1',
-        carrierName: null,
-        rawBarcode: 'SN123',
-        category: 'devices',
-        nameAr: 'جهاز',
-      });
-      vi.mocked(SerialRecognitionService.findItemBySerial).mockResolvedValue(null);
-
-      const result = await CustodyEngine.scanItem('SN123', 'type-1', 'tech-1', mockTx);
-      expect(result).toEqual({ id: 'item-1', action: 'inserted' });
-      expect(mockTx.insert).toHaveBeenCalled();
-    });
-
-    it('throws when item already active', async () => {
-      vi.mocked(SerialRecognitionService.normalizeForStorage).mockResolvedValue({
-        normalizedSerial: 'SN123',
-        itemTypeId: 'type-1',
-        carrierName: null,
-        rawBarcode: 'SN123',
-        category: 'devices',
-        nameAr: 'جهاز',
-      });
-      vi.mocked(SerialRecognitionService.findItemBySerial).mockResolvedValue({
-        id: 'item-1',
-        serialNumber: 'SN123',
-        currentOwnerId: null,
-        status: 'WAREHOUSE',
-      } as any);
-
-      await expect(CustodyEngine.scanItem('SN123', 'type-1', 'tech-1', mockTx)).rejects.toThrow(
-        'المنتج موجود مسبقاً وحالته نشط'
-      );
-    });
-
-    it('throws when item already delivered', async () => {
-      vi.mocked(SerialRecognitionService.normalizeForStorage).mockResolvedValue({
-        normalizedSerial: 'SN123',
-        itemTypeId: 'type-1',
-        carrierName: null,
-        rawBarcode: 'SN123',
-        category: 'devices',
-        nameAr: 'جهاز',
-      });
-      vi.mocked(SerialRecognitionService.findItemBySerial).mockResolvedValue({
-        id: 'item-1',
-        serialNumber: 'SN123',
-        currentOwnerId: null,
-        status: 'DELIVERED',
-      } as any);
-
-      await expect(CustodyEngine.scanItem('SN123', 'type-1', 'tech-1', mockTx)).rejects.toThrow(
-        'المنتج موجود وحالته مغلق'
-      );
-    });
-  });
-
   describe('deliverItem', () => {
     it('delivers when ownership matches', async () => {
       const existingItem = {

@@ -19,6 +19,12 @@ export interface RecognizeOptions {
   strictHint?: boolean;
   /** Reject (instead of accepting an arbitrary serial) when the resolved type has no valid serialRegex. */
   requireSerialRule?: boolean;
+  /**
+   * Narrow exception, for WarehouseTransferService.scanSerial ONLY: with strictHint, also accept
+   * the hinted type when it still EXISTS but is now hidden/inactive. The caller must already have
+   * proven the scan completes a transfer that predates the retirement; unknown ids still throw.
+   */
+  allowRetiredHintedType?: boolean;
 }
 
 export interface StoredSerialResolution {
@@ -309,7 +315,17 @@ export class SerialRecognitionService {
     // Strict mode (new entries): the client-selected type is the authority — it is
     // accepted exactly as chosen or rejected, never replaced by a heuristic match.
     const strict = !!(options?.strictHint && hintItemTypeId);
-    if (strict && (!matchedType || matchedType.isVisible === false)) {
+    if (strict && (!matchedType || matchedType.isVisible === false) && options?.allowRetiredHintedType) {
+      const [retired] = await txClient
+        .select()
+        .from(itemTypes)
+        .where(eq(itemTypes.id, hintItemTypeId!))
+        .limit(1);
+      if (retired && retired.requiresSerial) {
+        matchedType = retired;
+      }
+    }
+    if (strict && (!matchedType || (matchedType.isVisible === false && !options?.allowRetiredHintedType))) {
       throw new AppError(
         `نوع الصنف المحدد (${hintItemTypeId}) غير موجود أو غير مفعّل للإدخال الجديد`,
         400
