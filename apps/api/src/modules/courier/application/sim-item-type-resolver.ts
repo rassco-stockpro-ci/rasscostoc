@@ -12,9 +12,9 @@ type ActiveItemTypesReader = Pick<typeof defaultItemTypesService, "getActiveItem
  * multi-match result as ambiguous and require explicit resolution rather
  * than guessing.
  *
- * `hintText` (e.g. free-text carrier name from the request) is used only to
- * narrow an already regex-ambiguous candidate set down to one — never as the
- * primary source of truth on its own.
+ * `hintText` (the caller's explicit carrier choice) filters the regex-confirmed
+ * candidates: it can never introduce a type the serial doesn't match, and a
+ * choice that contradicts every match yields zero candidates.
  */
 export async function resolveSimItemTypeCandidates(
   serial: string,
@@ -22,8 +22,10 @@ export async function resolveSimItemTypeCandidates(
   itemTypesService: ActiveItemTypesReader = defaultItemTypesService,
 ): Promise<ItemType[]> {
   const activeTypes = await itemTypesService.getActiveItemTypes();
+  // Serialized vs quantity-tracked comes only from the catalog's requiresSerial
+  // flag: a requiresSerial=false type is never a candidate for a per-serial item.
   const simTypes = activeTypes.filter(
-    (t) => t.category === "sim" && !!t.serialRegex,
+    (t) => t.category === "sim" && t.requiresSerial === true && !!t.serialRegex,
   );
 
   const regexMatches = simTypes.filter((t) => {
@@ -35,15 +37,17 @@ export async function resolveSimItemTypeCandidates(
     }
   });
 
-  if (regexMatches.length <= 1 || !hintText) {
+  if (!hintText || !hintText.trim()) {
     return regexMatches;
   }
 
+  // An explicit carrier choice must agree with a regex-confirmed candidate: it
+  // narrows the set, and a choice that contradicts every regex match yields no
+  // candidate at all — the server never overrides the caller's choice with a
+  // different type that merely happens to match the pattern.
   const lowerHint = hintText.toLowerCase();
-  const narrowed = regexMatches.filter((t) => {
+  return regexMatches.filter((t) => {
     const carrierWord = (t.nameEn || "").trim().split(/\s+/)[0]?.toLowerCase();
     return !!carrierWord && lowerHint.includes(carrierWord);
   });
-
-  return narrowed.length === 1 ? narrowed : regexMatches;
 }

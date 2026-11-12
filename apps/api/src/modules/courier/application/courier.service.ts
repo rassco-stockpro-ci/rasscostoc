@@ -499,10 +499,12 @@ export class CourierService {
         });
       }
 
-      // Fetch request once to resolve device/SIM types if minting is needed
-      const reqData = await ctx.requestsRepository.findRequestById(requestId);
-
-      // 2. Transfer Custody / Mint items in Inventory Engine
+      // 2. Transfer custody of already-registered inventory items.
+      // The item's stored itemTypeId is the only authority for its type: receipt
+      // never derives, guesses or changes it. A serial with no inventory record
+      // has no trusted type (request items carry only a coarse POS/SIM kind and
+      // the request's free-text sim/installation fields), so the receipt is
+      // rejected rather than minting the item under a guessed type.
       for (const item of latestItems) {
         if (item.status === "RECEIVED") {
           const serial = item.serialNumber || item.simSerial;
@@ -510,60 +512,27 @@ export class CourierService {
             // Central Serial Engine: resolve existing row by any equivalent serial form
             const invItem = await ctx.inventoryPort.findItemBySerial(serial);
 
-            if (invItem) {
-              const oldStatus = invItem.status;
-
-              // Update item status & current owner & Record transaction & item history log
-              await ctx.inventoryPort.transferCustodyToTechnician({
-                itemId: invItem.id,
-                technicianId: actorId,
-                requestId,
-                oldStatus,
-                newStatus: "RECEIVED_BY_TECHNICIAN"
-              });
-            } else {
-              // MINTING: first scan in quantity-only flow — normalize before storage
-              let hintItemTypeId = "n950";
-              if (item.itemType === "POS") {
-                const typeStr = String(reqData?.installationType || "").toLowerCase();
-                if (typeStr.includes("9000")) hintItemTypeId = "i9000s";
-                else if (typeStr.includes("9100")) hintItemTypeId = "i9100";
-                else hintItemTypeId = "n950";
-              } else if (item.itemType === "SIM") {
-                const simHintText = String(reqData?.sim || "");
-                const simCandidates = await resolveSimItemTypeCandidates(serial, simHintText);
-                if (simCandidates.length === 1) {
-                  hintItemTypeId = simCandidates[0].id;
-                } else {
-                  throw new AppError(
-                    simCandidates.length === 0
-                      ? `تعذّر تحديد شركة الشريحة تلقائيًا من السيريال أو بيانات الطلب ("${reqData?.sim ?? ""}"). يجب تحديد شركة الشريحة صراحة قبل المتابعة.`
-                      : `السيريال يطابق أكثر من نوع شريحة محتمل في الكتالوج (${simCandidates.map((c) => c.nameEn).join(", ")}) ولا يمكن حسمه تلقائيًا. يجب تحديد شركة الشريحة صراحة قبل المتابعة.`,
-                    400
-                  );
-                }
-              }
-
-              const stored = await ctx.inventoryPort.normalizeSerial(
-                serial,
-                hintItemTypeId
+            if (!invItem) {
+              throw new AppError(
+                `الرقم التسلسلي ${serial} غير مسجل في المخزون، ولا يوجد نوع صنف معتمد له. يجب تسجيل الصنف بنوعه الصحيح في المخزون قبل تأكيد الاستلام.`,
+                400
               );
-
-              // Persist normalized form on request item for downstream deduction/guards
-              if (item.serialNumber) {
-                await ctx.requestsRepository.updateRequestItem(item.id, { serialNumber: stored.normalizedSerial });
-              } else if (item.simSerial) {
-                await ctx.requestsRepository.updateRequestItem(item.id, { simSerial: stored.normalizedSerial });
-              }
-
-              await ctx.inventoryPort.mintAndAssignToTechnician({
-                serial: stored.normalizedSerial,
-                itemTypeId: stored.itemTypeId,
-                carrierName: stored.carrierName,
-                technicianId: actorId,
-                requestId
-              });
             }
+
+            // Idempotent: progressive receipt re-processes every RECEIVED item on
+            // each call, so an item already in this technician's custody must not
+            // get a second transaction/history/custody movement.
+            const alreadyHeldByActor =
+              invItem.currentOwnerId === actorId && invItem.status === "RECEIVED_BY_TECHNICIAN";
+            if (alreadyHeldByActor) continue;
+
+            await ctx.inventoryPort.transferCustodyToTechnician({
+              itemId: invItem.id,
+              technicianId: actorId,
+              requestId,
+              oldStatus: invItem.status,
+              newStatus: "RECEIVED_BY_TECHNICIAN"
+            });
           }
         }
       }
@@ -1916,15 +1885,21 @@ export class CourierService {
 
     // Resolve item type: an already-classified item keeps its stored type
     // (re-deriving from the serial on every re-link risks flipping a correctly
-    // classified item if the catalog's regexes overlap, e.g. mobilySim/stcSim).
-    // A genuinely new item is resolved against the live catalog's serialRegex
-    // — never a hardcoded carrier keyword list — and ambiguity is rejected,
-    // not guessed.
+    // classified item when catalog regexes overlap). A genuinely new item needs
+    // the caller's explicit simType, which must agree with exactly one live
+    // catalog type whose serialRegex accepts the serial — the server never
+    // picks a type on its own, even when only one regex happens to match.
     let simTypeId: string;
     let carrierNameFromResolution: string | undefined;
     if (existing.length > 0 && existing[0].itemTypeId) {
       simTypeId = existing[0].itemTypeId;
     } else {
+      if (!data.simType || !data.simType.trim()) {
+        throw new AppError(
+          "شريحة جديدة غير مسجلة: يجب إرسال نوع الشريحة (simType) صراحة؛ لا يحدد الخادم النوع تلقائيًا.",
+          400
+        );
+      }
       const simCandidates = await resolveSimItemTypeCandidates(simSerial, data.simType);
       if (simCandidates.length !== 1) {
         throw new AppError(

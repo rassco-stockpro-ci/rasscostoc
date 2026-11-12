@@ -17,7 +17,10 @@ import { resolveSimItemTypeCandidates } from "./sim-item-type-resolver";
  * whatever rows the catalog service returns.
  */
 function fakeItemTypesService(rows: any[]) {
-  return { getActiveItemTypes: async () => rows } as any;
+  // Fixture rows default to serialized (requiresSerial=true) unless a test says otherwise.
+  return {
+    getActiveItemTypes: async () => rows.map((r) => ({ requiresSerial: true, ...r })),
+  } as any;
 }
 
 describe("resolveSimItemTypeCandidates — catalog-driven, zero hardcoded carrier logic", () => {
@@ -74,7 +77,7 @@ describe("resolveSimItemTypeCandidates — catalog-driven, zero hardcoded carrie
     expect(result[0].id).toBe("stcSim");
   });
 
-  it("hint text that matches nothing in the ambiguous set still leaves it ambiguous (hint never overrides regex-confirmed membership)", async () => {
+  it("an explicit choice that contradicts every regex match yields zero candidates (never swapped for a different matching type)", async () => {
     const catalog = [
       { id: "mobilySim", nameEn: "Mobily SIM", category: "sim", serialRegex: "^89966[0-9]{13,14}$" },
       { id: "stcSim", nameEn: "STC SIM", category: "sim", serialRegex: "^89966[0-9]{13,14}$" },
@@ -82,11 +85,26 @@ describe("resolveSimItemTypeCandidates — catalog-driven, zero hardcoded carrie
 
     const result = await resolveSimItemTypeCandidates(
       "899660000000000001",
-      "Virgin Mobile 2x", // names a carrier that isn't even a regex candidate here
+      "Virgin Mobile 2x", // names a carrier that isn't a regex candidate here
       fakeItemTypesService(catalog)
     );
 
-    expect(result).toHaveLength(2); // still ambiguous — hint text cannot manufacture a match
+    expect(result).toHaveLength(0);
+  });
+
+  it("a single regex match is NOT accepted when the explicit choice names a different carrier", async () => {
+    const catalog = [
+      { id: "stcSim", nameEn: "STC SIM", category: "sim", serialRegex: "^89966[0-9]{13,14}$" },
+      { id: "zainSim", nameEn: "Zain SIM", category: "sim", serialRegex: "^ZN[0-9]{10}$" },
+    ];
+
+    const result = await resolveSimItemTypeCandidates(
+      "899660000000000001",
+      "Zain",
+      fakeItemTypesService(catalog)
+    );
+
+    expect(result).toHaveLength(0);
   });
 
   it("a type with no serialRegex configured can never be regex-matched, by design — excluded from candidates entirely", async () => {
@@ -103,6 +121,21 @@ describe("resolveSimItemTypeCandidates — catalog-driven, zero hardcoded carrie
 
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("stcSim");
+  });
+
+  it("a requiresSerial=false (quantity-tracked) type is never a candidate for a serialized item, even if its regex matches", async () => {
+    const catalog = [
+      { id: "qtySim", nameEn: "Qty SIM", category: "sim", requiresSerial: false, serialRegex: "^89966[0-9]{13,14}$" },
+      { id: "stcSim", nameEn: "STC SIM", category: "sim", serialRegex: "^89966[0-9]{13,14}$" },
+    ];
+
+    const result = await resolveSimItemTypeCandidates(
+      "899660000000000001",
+      undefined,
+      fakeItemTypesService(catalog)
+    );
+
+    expect(result.map((r) => r.id)).toEqual(["stcSim"]);
   });
 
   it("non-sim category rows are never candidates, regardless of regex", async () => {
