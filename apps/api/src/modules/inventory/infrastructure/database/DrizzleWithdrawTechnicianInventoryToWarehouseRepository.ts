@@ -6,6 +6,8 @@ import { repositories } from "@modules/inventory/infrastructure/database";
 import { WarehouseRepository } from "./WarehouseRepository";
 import { WarehouseInventoryRepository } from "./WarehouseInventoryRepository";
 import { TechnicianInventoryRepository } from "./TechnicianInventoryRepository";
+import { getDatabase } from "@core/database/connection";
+import { assertItemTypeQuantityTrackable, assertNonNegativeInteger, findIdempotentReplay } from "./quantity-entry-guards";
 
 export class DrizzleWithdrawTechnicianInventoryToWarehouseRepository
   implements IWithdrawTechnicianInventoryToWarehouseRepository
@@ -80,5 +82,19 @@ export class DrizzleWithdrawTechnicianInventoryToWarehouseRepository
     success: boolean;
   }) {
     return repositories.systemLogs.createSystemLog(payload as any);
+  }
+
+  async assertItemsQuantityTrackable(items: { itemTypeId: string; quantity: number }[]): Promise<void> {
+    const db = getDatabase();
+    for (const item of items) {
+      await assertItemTypeQuantityTrackable(db, item.itemTypeId);
+      assertNonNegativeInteger(item.quantity, `الكمية (${item.itemTypeId})`);
+    }
+  }
+
+  async isIdempotentWithdrawReplay(idempotencyKey: string): Promise<boolean> {
+    const db = getDatabase();
+    const replay = await findIdempotentReplay(db, "technician_withdraw_to_warehouse", idempotencyKey);
+    return replay !== null;
   }
 }

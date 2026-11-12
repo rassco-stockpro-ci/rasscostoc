@@ -3,6 +3,7 @@ import { AppError, NotFoundError } from "@core/errors/AppError";
 import { items, inventoryTransactions, itemHistoryLogs, itemTypes, users, custodyMovements, technicianMovingInventoryEntries, courierRequestItems, systemLogs } from "@shared/schema";
 import { eq, and, inArray, sql, or, desc } from "drizzle-orm";
 import { SerialRecognitionService } from "./serial-recognition.service";
+import { syncMovingInventory as syncMovingInventoryShared } from "../../contracts/moving-inventory-sync";
 
 /** Item is considered "held" by a technician in one of these statuses. */
 const TECHNICIAN_HELD_STATUSES = ["IN_TRANSIT_CUSTODY", "RECEIVED_BY_TECHNICIAN", "IN_TRANSIT"];
@@ -16,36 +17,7 @@ const CUSTODY_DELETE_ITEM_TYPE_TO_CATEGORY: Record<string, string> = {
 
 export class SerializedItemsService {
   private async syncMovingInventory(tx: any, technicianId: string, itemTypeId: string, delta: number) {
-    if (!technicianId || !itemTypeId || delta === 0) return;
-
-    const [existingEntry] = await tx
-      .select()
-      .from(technicianMovingInventoryEntries)
-      .where(
-        and(
-          eq(technicianMovingInventoryEntries.technicianId, technicianId),
-          eq(technicianMovingInventoryEntries.itemTypeId, itemTypeId)
-        )
-      )
-      .limit(1);
-
-    if (existingEntry) {
-      const newUnits = Math.max(0, existingEntry.units + delta);
-      await tx
-        .update(technicianMovingInventoryEntries)
-        .set({
-          units: newUnits,
-          updatedAt: new Date(),
-        })
-        .where(eq(technicianMovingInventoryEntries.id, existingEntry.id));
-    } else if (delta > 0) {
-      await tx.insert(technicianMovingInventoryEntries).values({
-        technicianId,
-        itemTypeId,
-        units: delta,
-        boxes: 0,
-      });
-    }
+    return syncMovingInventoryShared(tx, technicianId, itemTypeId, delta);
   }
 
   /**

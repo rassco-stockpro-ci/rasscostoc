@@ -95,27 +95,38 @@ describe('InventoryEntriesUseCase', () => {
       .mockResolvedValueOnce(technicianMovingEntryFixture({ id: 'm-1', itemTypeId: 'n950' }))
       .mockResolvedValueOnce(technicianMovingEntryFixture({ id: 'm-2', itemTypeId: 'i9100' }));
 
+    const actor = { id: 'admin-1', username: 'admin', role: 'admin' };
+
     const fixed = await useCase.getTechnicianFixedEntries('tech-1');
     const moving = await useCase.getTechnicianMovingEntries('tech-1');
-    const batch = await useCase.upsertTechnicianMovingEntriesBatch('tech-1', [
-      { itemTypeId: 'n950', boxes: 1, units: 0 },
-      { itemTypeId: 'i9100', boxes: 0, units: 2 },
-    ]);
+    const batch = await useCase.upsertTechnicianMovingEntriesBatch(
+      'tech-1',
+      [
+        { itemTypeId: 'n950', boxes: 1, units: 0 },
+        { itemTypeId: 'i9100', boxes: 0, units: 2 },
+      ],
+      actor,
+      'batch-test-idempotency-key-0001',
+    );
 
     expect(fixed).toHaveLength(1);
     expect(moving).toHaveLength(1);
     expect(batch).toHaveLength(2);
     expect(batch[0].id).toBe('m-1');
     expect(batch[1].id).toBe('m-2');
-    expect(repository.upsertTechnicianMovingEntry).toHaveBeenNthCalledWith(1, 'tech-1', {
-      itemTypeId: 'n950',
-      boxes: 1,
-      units: 0,
-    });
-    expect(repository.upsertTechnicianMovingEntry).toHaveBeenNthCalledWith(2, 'tech-1', {
-      itemTypeId: 'i9100',
-      boxes: 0,
-      units: 2,
-    });
+    expect(repository.upsertTechnicianMovingEntry).toHaveBeenNthCalledWith(
+      1,
+      'tech-1',
+      { itemTypeId: 'n950', boxes: 1, units: 0 },
+      actor,
+      'batch-test-idempotency-key-0001:0',
+    );
+    expect(repository.upsertTechnicianMovingEntry).toHaveBeenNthCalledWith(
+      2,
+      'tech-1',
+      { itemTypeId: 'i9100', boxes: 0, units: 2 },
+      actor,
+      'batch-test-idempotency-key-0001:1',
+    );
   });
 });

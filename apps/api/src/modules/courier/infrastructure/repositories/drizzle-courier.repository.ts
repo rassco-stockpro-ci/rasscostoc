@@ -19,6 +19,7 @@ import {
   regions,
 } from "@shared/schema";
 import { eq, and, or, sql, desc, count, inArray, ilike } from "drizzle-orm";
+import { syncMovingInventory } from "@modules/inventory/contracts/moving-inventory-sync";
 import type { ICourierRepository } from "../../domain/repositories/courier.repository.interface";
 import type { ICourierRequestsRepository } from "../../domain/repositories/ICourierRequestsRepository";
 import type { ICourierExecutionsRepository } from "../../domain/repositories/ICourierExecutionsRepository";
@@ -1040,7 +1041,7 @@ export class DrizzleCourierRepository implements
     tx?: any
   ): Promise<void> {
     const client = tx || this.tx || db;
-    
+
     // Update item status & current owner
     await client
       .update(items)
@@ -1050,6 +1051,23 @@ export class DrizzleCourierRepository implements
         updatedAt: new Date(),
       })
       .where(eq(items.id, params.itemId));
+
+    // Moving-inventory counter: only a genuine custody GAIN (item wasn't
+    // already technician-held) should increment it. A same-technician
+    // status move (e.g. RECEIVED_BY_TECHNICIAN -> IN_TRANSIT while starting
+    // the delivery task) must not double-count — this was the exact gap
+    // that left technician/item-type pairs with real items but no counter
+    // row at all.
+    const TECHNICIAN_HELD_STATUSES = ["IN_TRANSIT_CUSTODY", "RECEIVED_BY_TECHNICIAN", "IN_TRANSIT"];
+    if (!TECHNICIAN_HELD_STATUSES.includes(params.oldStatus)) {
+      const [itemRow] = await client
+        .select({ itemTypeId: items.itemTypeId })
+        .from(items)
+        .where(eq(items.id, params.itemId));
+      if (itemRow) {
+        await syncMovingInventory(client, params.technicianId, itemRow.itemTypeId, 1);
+      }
+    }
 
     // Record inventory transaction
     await client.insert(inventoryTransactions).values({
@@ -1120,6 +1138,10 @@ export class DrizzleCourierRepository implements
         changedById: params.technicianId,
         notes: `إنشاء أصل جديد عهدة للفني لأول مرة - طلب رقم ${params.requestId}`,
       });
+
+      // Brand-new item minted straight into technician custody — always a
+      // genuine gain, unconditionally sync the moving-inventory counter.
+      await syncMovingInventory(client, params.technicianId, params.itemTypeId, 1);
     }
 
     return {

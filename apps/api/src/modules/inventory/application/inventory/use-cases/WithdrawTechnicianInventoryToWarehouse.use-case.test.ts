@@ -24,6 +24,8 @@ function createMockRepository(): MockRepo {
     updateTechnicianInventory: vi.fn(),
     updateWarehouseInventory: vi.fn(),
     logSystemActivity: vi.fn(),
+    assertItemsQuantityTrackable: vi.fn().mockResolvedValue(undefined),
+    isIdempotentWithdrawReplay: vi.fn().mockResolvedValue(false),
   };
 }
 
@@ -43,6 +45,7 @@ function buildValidInput(overrides: Partial<WithdrawTechnicianInventoryToWarehou
       { itemTypeId: 'n950', packagingType: 'box', quantity: 1 },
       { itemTypeId: 'n950', packagingType: 'unit', quantity: 2 },
     ],
+    idempotencyKey: 'withdraw-test-key-0001',
     ...overrides,
   };
 }

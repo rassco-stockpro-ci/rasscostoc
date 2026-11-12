@@ -119,9 +119,24 @@ describe("IDOR fix — HTTP-level proof the guard is wired into the real routes"
     upsertTechnicianFixedEntryMock.mockResolvedValue({ itemTypeId: "x", boxes: 5, units: 5 });
     const res = await request(buildApp())
       .post("/api/technicians/tech-B/fixed-inventory-entries")
+      .set("X-Idempotency-Key", "test-idempotency-key-0001")
       .send({ itemTypeId: "x", boxes: 5, units: 5 });
     expect(res.status).toBe(200);
-    expect(upsertTechnicianFixedEntryMock).toHaveBeenCalledWith("tech-B", expect.any(Object));
+    expect(upsertTechnicianFixedEntryMock).toHaveBeenCalledWith(
+      "tech-B",
+      expect.any(Object),
+      expect.any(Object),
+      "test-idempotency-key-0001",
+    );
+  });
+
+  it("Writing without an X-Idempotency-Key header -> 400 (idempotency now mandatory on this write route)", async () => {
+    currentUser = { id: "admin-1", role: "admin" };
+    const res = await request(buildApp())
+      .post("/api/technicians/tech-B/fixed-inventory-entries")
+      .send({ itemTypeId: "x", boxes: 5, units: 5 });
+    expect(res.status).toBe(400);
+    expect(upsertTechnicianFixedEntryMock).not.toHaveBeenCalled();
   });
 
   it("Supervisor WITHIN scope reads a technician's fixed-inventory-entries -> 200 (PASS)", async () => {

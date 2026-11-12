@@ -79,6 +79,21 @@ export class WarehouseTransferService {
       notes: `تم المسح والاستلام الفردي`,
     });
 
+    // NOTE: scanSerial must NOT touch technician_moving_inventory_entries.
+    // The counter for this transfer's full quantity is already credited
+    // once, at accept() time, by processWarehouseTransferBatch ->
+    // setTechnicianMovingBalance (batch quantity, not per-scanned-serial).
+    // A syncMovingInventory(+1) call was added here in an earlier round to
+    // close a different gap (items minted with no counter row at all via
+    // OTHER code paths that never call accept/batch-processing) — but on
+    // THIS path specifically it double-counts: accept() already credited
+    // the full transfer.quantity for this itemType, so crediting +1 again
+    // per scanned serial on top of that stacks a second (here: third,
+    // combined with a separate confirmReceipt bug fixed on a sibling
+    // branch) increment for units that were already counted. Proven by a
+    // real-SQL test below: accept credits once, then scanning N items for
+    // that transfer must leave the counter unchanged.
+
     return {
       success: true,
       serialNumber: cleanSerial,
@@ -88,8 +103,17 @@ export class WarehouseTransferService {
   }
 
   async confirmReceipt(userId: string, transferId: string, itemType: string, quantity: number, packagingType: string | null) {
-    const serializedCategories = ["n950", "i9000s", "i9100", "mobilySim", "stcSim", "zainSim", "lebara", "lebaraSim"];
-    const isSerialized = serializedCategories.includes(itemType);
+    // Serial-vs-quantity tracking mode comes ONLY from item_types.requires_serial
+    // (the user-confirmed single source of truth) — a hardcoded ID allowlist
+    // here previously meant any NEW serialized item type silently skipped the
+    // scanned-count check below (it would just fall through to isSerialized
+    // = false and be trusted on quantity alone, same defect class as every
+    // other category/name/prefix-based inference flagged across this task).
+    const [itemTypeRow] = await db
+      .select({ requiresSerial: itemTypes.requiresSerial })
+      .from(itemTypes)
+      .where(eq(itemTypes.id, itemType));
+    const isSerialized = itemTypeRow?.requiresSerial === true;
 
     if (isSerialized) {
       const scannedItems = await db

@@ -21,6 +21,7 @@ export type WithdrawTechnicianInventoryToWarehouseInput = {
   warehouseId: string;
   notes?: string;
   items: WithdrawItemInput[];
+  idempotencyKey: string;
 };
 
 export type WithdrawTechnicianInventoryToWarehouseOutput = {
@@ -100,6 +101,12 @@ export interface IWithdrawTechnicianInventoryToWarehouseRepository {
     severity: string;
     success: boolean;
   }): Promise<unknown>;
+
+  /** Same tracking-mode/quantity-integrity guard shared with every other quantity-write path (see quantity-entry-guards.ts). Throws for the first offending item found. */
+  assertItemsQuantityTrackable(items: { itemTypeId: string; quantity: number }[]): Promise<void>;
+
+  /** Domain-level idempotency-replay check — true if this exact key was already applied for a withdraw-to-warehouse action. */
+  isIdempotentWithdrawReplay(idempotencyKey: string): Promise<boolean>;
 }
 
 export class WithdrawTechnicianInventoryToWarehouseUseCase {
@@ -110,6 +117,29 @@ export class WithdrawTechnicianInventoryToWarehouseUseCase {
   async execute(
     input: WithdrawTechnicianInventoryToWarehouseInput
   ): Promise<WithdrawTechnicianInventoryToWarehouseOutput> {
+    if (!input.idempotencyKey || input.idempotencyKey.trim().length < 10) {
+      throw new WithdrawToWarehouseUseCaseError(
+        400,
+        "يتطلب السحب إلى المستودع ترويسة X-Idempotency-Key صالحة (10 أحرف على الأقل) لمنع تنفيذ العملية مرتين",
+      );
+    }
+
+    if (await this.repository.isIdempotentWithdrawReplay(input.idempotencyKey)) {
+      return {
+        success: true,
+        message: "تم سحب المخزون إلى المستودع بنجاح (عملية مكررة، لم يُعاد تنفيذها)",
+        itemsCount: 0,
+        totalQuantity: 0,
+      };
+    }
+
+    // Same tracking-mode guard as every other quantity-write path:
+    // requires_serial=true types can never be withdrawn through this
+    // bare-quantity path.
+    await this.repository.assertItemsQuantityTrackable(
+      input.items.map((i) => ({ itemTypeId: i.itemTypeId, quantity: i.quantity })),
+    );
+
     const technician = await this.repository.getUser(input.technicianId);
     if (!technician || technician.role !== "technician") {
       throw new NotFoundError("Technician not found");
@@ -273,7 +303,7 @@ export class WithdrawTechnicianInventoryToWarehouseUseCase {
       userRole: input.actor.role,
       regionId: input.actor.regionId || null,
       action: "transfer",
-      entityType: "warehouse",
+      entityType: "technician_withdraw_to_warehouse",
       entityId: input.warehouseId,
       entityName: warehouse.name,
       description: `تم سحب ${totalQuantity} من مخزون المندوب ${technician.fullName} إلى المستودع ${warehouse.name}`,
@@ -284,6 +314,7 @@ export class WithdrawTechnicianInventoryToWarehouseUseCase {
         warehouseName: warehouse.name,
         items: Array.from(aggregated.values()),
         notes: input.notes || null,
+        idempotencyKey: input.idempotencyKey,
       }),
       severity: "info",
       success: true,
