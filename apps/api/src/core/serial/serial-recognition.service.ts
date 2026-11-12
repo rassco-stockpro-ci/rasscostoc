@@ -14,6 +14,13 @@ export interface RecognitionResult {
   error?: string;
 }
 
+export interface RecognizeOptions {
+  /** When a hintItemTypeId is given: accept exactly that active+visible type or throw; never substitute. */
+  strictHint?: boolean;
+  /** Reject (instead of accepting an arbitrary serial) when the resolved type has no valid serialRegex. */
+  requireSerialRule?: boolean;
+}
+
 export interface StoredSerialResolution {
   /** Canonical form that should be written to items.serialNumber */
   normalizedSerial: string;
@@ -156,9 +163,10 @@ export class SerialRecognitionService {
   static async normalizeForStorage(
     rawBarcode: string,
     hintItemTypeId?: string,
-    txClient: any = db
+    txClient: any = db,
+    options?: RecognizeOptions
   ): Promise<StoredSerialResolution> {
-    const recognition = await this.recognize(rawBarcode, hintItemTypeId, txClient);
+    const recognition = await this.recognize(rawBarcode, hintItemTypeId, txClient, options);
     return {
       normalizedSerial: recognition.normalizedSerial,
       itemTypeId: recognition.itemTypeId,
@@ -198,7 +206,12 @@ export class SerialRecognitionService {
    * Recognize and validate a raw barcode.
    * If a hintItemTypeId is provided, it prioritizes that type for matching/validation.
    */
-  static async recognize(rawBarcode: string, hintItemTypeId?: string, txClient: any = db): Promise<RecognitionResult> {
+  static async recognize(
+    rawBarcode: string,
+    hintItemTypeId?: string,
+    txClient: any = db,
+    options?: RecognizeOptions
+  ): Promise<RecognitionResult> {
     const cleaned = this.normalizeRawBarcode(rawBarcode);
     if (!cleaned) {
       throw new AppError("الرقم التسلسلي فارغ بعد التنظيف", 400);
@@ -293,6 +306,16 @@ export class SerialRecognitionService {
       ? serializedTypes.find((t: any) => t.id.toLowerCase() === hintItemTypeId.toLowerCase())
       : undefined;
 
+    // Strict mode (new entries): the client-selected type is the authority — it is
+    // accepted exactly as chosen or rejected, never replaced by a heuristic match.
+    const strict = !!(options?.strictHint && hintItemTypeId);
+    if (strict && (!matchedType || matchedType.isVisible === false)) {
+      throw new AppError(
+        `نوع الصنف المحدد (${hintItemTypeId}) غير موجود أو غير مفعّل للإدخال الجديد`,
+        400
+      );
+    }
+
     if (!matchedType) {
       if (/^SAW[0-9]{11}$/i.test(cleaned)) {
         matchedType = serializedTypes.find((t: any) => t.id === 'i9100');
@@ -355,6 +378,12 @@ export class SerialRecognitionService {
           400
         );
       }
+      if (options?.requireSerialRule && !type.serialRegex) {
+        throw new AppError(
+          `لا توجد صيغة رقم تسلسلي معرّفة للنوع ${type.nameAr}؛ لا يمكن قبول الإدخال حتى تُعرَّف الصيغة`,
+          400
+        );
+      }
       if (type.serialRegex) {
         try {
           const regex = new RegExp(type.serialRegex, 'i');
@@ -363,6 +392,9 @@ export class SerialRecognitionService {
           }
         } catch (e) {
           if (e instanceof AppError) throw e;
+          if (options?.requireSerialRule) {
+            throw new AppError(`صيغة الرقم التسلسلي المعرّفة للنوع ${type.nameAr} غير صالحة`, 400);
+          }
         }
       }
     }

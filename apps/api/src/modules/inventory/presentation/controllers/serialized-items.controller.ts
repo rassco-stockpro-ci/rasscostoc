@@ -5,6 +5,28 @@ import { z } from "zod";
 import type { SerializedItemsService } from "../../infrastructure/services/serialized-items.service";
 import { ROLES } from "@shared/roles";
 import { isTechnicianCustodyDeleteEnabled } from "../../config/technician-custody-delete.flag";
+import { supervisorAssignmentsContainer } from "@server/composition/supervisor-assignments.container";
+
+/**
+ * Can this authenticated user see the given item's current owner's custody
+ * details? Admin: always. Supervisor: only technicians actually assigned to
+ * them (SupervisorAssignmentsUseCase — same scope source as requireTechnicianScope).
+ * Technician: only themself. No currentOwnerId (unassigned item) — admin/supervisor
+ * only, never a plain technician.
+ */
+async function canViewOwnerDetails(
+  user: { id: string; role: string },
+  currentOwnerId: string | null
+): Promise<boolean> {
+  if (user.role === ROLES.ADMIN) return true;
+  if (currentOwnerId && user.id === currentOwnerId) return true;
+  if (user.role === ROLES.SUPERVISOR) {
+    if (!currentOwnerId) return false;
+    const assigned = await supervisorAssignmentsContainer.supervisorAssignmentsUseCase.getTechnicianIdsBySupervisor(user.id);
+    return assigned.includes(currentOwnerId);
+  }
+  return false;
+}
 
 const scanInSchema = z.object({
   serialNumber: z.string().trim().min(1, "الرقم التسلسلي مطلوب"),
@@ -184,9 +206,51 @@ export class SerializedItemsController {
       });
     }
 
+    const allowed = await canViewOwnerDetails(req.user!, item.currentOwnerId ?? null);
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "غير مصرح لك بالوصول لبيانات هذه المادة",
+      });
+    }
+
+    const { currentOwnerId, ...safeItem } = item;
+
     res.status(200).json({
       success: true,
-      data: item,
+      data: safeItem,
+    });
+  });
+
+  /**
+   * GET /api/serialized-items/search?q=...
+   * Admin-facing substring search (the counterpart to lookup()'s exact match),
+   * used by the portal's operations-search page. Results are scoped exactly
+   * like getTechnicianCustody/lookup: admin sees everything, a supervisor only
+   * their assigned technicians' items, a technician only their own.
+   */
+  search = asyncHandler(async (req: Request, res: Response) => {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!q) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const user = req.user!;
+    let ownerIdFilter: string[] | undefined;
+
+    if (user.role === ROLES.SUPERVISOR) {
+      ownerIdFilter = await supervisorAssignmentsContainer.supervisorAssignmentsUseCase.getTechnicianIdsBySupervisor(user.id);
+    } else if (user.role !== ROLES.ADMIN) {
+      // Technician (or any other non-admin, non-supervisor role): self only.
+      ownerIdFilter = [user.id];
+    }
+    // ROLES.ADMIN: ownerIdFilter stays undefined => unrestricted.
+
+    const results = await this.serializedItemsService.searchItems(q, ownerIdFilter);
+
+    res.status(200).json({
+      success: true,
+      data: results,
     });
   });
 

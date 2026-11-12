@@ -156,6 +156,9 @@ describe("Serialized Items HTTP Integration Tests", () => {
         itemTypeNameAr: "شريحة اتصال STC",
         ownerName: "الفني المختص",
         ownerUsername: "tech1",
+        // service now returns the owner id so the controller can enforce ownership scope;
+        // requester (test-tech-id-123) owns this item, and the id is stripped from the response.
+        currentOwnerId: "test-tech-id-123",
         history: [
           {
             id: "log-uuid-1",
@@ -175,7 +178,8 @@ describe("Serialized Items HTTP Integration Tests", () => {
         .expect(200);
 
       expect(res.body.success).toBe(true);
-      expect(res.body.data).toEqual(mockLookupResult);
+      const { currentOwnerId: _stripped, ...expectedBody } = mockLookupResult;
+      expect(res.body.data).toEqual(expectedBody);
       expect(mockSerializedItemsService.lookup).toHaveBeenCalledWith("SN-DEVICE-777");
     });
 

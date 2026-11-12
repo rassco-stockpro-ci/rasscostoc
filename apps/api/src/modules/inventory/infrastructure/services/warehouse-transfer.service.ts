@@ -18,7 +18,7 @@ export class WarehouseTransferService {
     const sn = serialNumber.trim();
 
     // 1. recognize serial
-    const recognition = await SerialRecognitionService.recognize(sn, itemType, db);
+    const recognition = await SerialRecognitionService.recognize(sn, itemType, db, { strictHint: true });
     const cleanSerial = recognition.normalizedSerial;
     const actualItemTypeId = recognition.itemTypeId;
 

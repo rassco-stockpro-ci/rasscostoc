@@ -68,6 +68,20 @@ type TimelineEntry = {
   tags?: string[];
 };
 
+type SerializedItemSearchResult = {
+  id: string;
+  serialNumber: string;
+  barcode: string | null;
+  status: string;
+  createdAt: string | Date;
+  itemTypeId: string | null;
+  itemTypeNameAr: string | null;
+  itemTypeNameEn: string | null;
+  ownerName: string | null;
+  ownerUsername: string | null;
+  currentOwnerId: string | null;
+};
+
 type SearchResultItem = {
   id: string;
   source: "withdrawn" | "received" | "warehouse-transfer";
@@ -286,6 +300,15 @@ export default function OperationsSearchPage() {
     data: itemTypes = [],
     isLoading: isLoadingItemTypes,
   } = useActiveItemTypes();
+
+  const {
+    data: serializedItemMatches = [],
+    isLoading: isLoadingSerializedItems,
+    error: serializedItemsError,
+  } = useQuery<SerializedItemSearchResult[]>({
+    queryKey: [`/api/serialized-items/search?q=${encodeURIComponent(submittedQuery)}`],
+    enabled: !!submittedQuery,
+  });
 
   const itemTypeMap = useMemo(() => {
     const map = new Map<string, { nameAr: string; nameEn: string }>();
@@ -511,10 +534,62 @@ export default function OperationsSearchPage() {
     );
   }, [itemTypeMap, receivedDevices, transfers, withdrawnDevices]);
 
-  const results = useMemo(
-    () => rankSearchResults(allResults, submittedQuery),
-    [allResults, submittedQuery],
-  );
+  // Serialized items (devices/SIMs tracked via scan-in/scan-out custody — the
+  // "items" table) are a separate data source from received/withdrawn/transfer
+  // records above, and the backend already scopes+filters by the submitted
+  // query server-side, so these are mapped directly rather than re-ranked
+  // client-side like allResults.
+  const serializedItemResults = useMemo<SearchResultItem[]>(() => {
+    return serializedItemMatches.map((item) => {
+      const itemTypeLabel = item.itemTypeNameAr || item.itemTypeNameEn || t('common.item_11173');
+      const shortId = (item.id || "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase();
+      const operationNumber = `SI-${shortId || "UNKNOWN"}`;
+
+      const timeline: TimelineEntry[] = [
+        {
+          id: `si-${item.id}`,
+          title: itemTypeLabel,
+          description: item.ownerName
+            ? t('common.technician_8', { var_0: item.ownerName })
+            : t('common.item_11173'),
+          timestamp: item.createdAt,
+          markerClass: "bg-cyan-400",
+          tags: [item.status],
+        },
+      ];
+
+      return {
+        id: `serialized-${item.id}`,
+        source: "received" as const,
+        sourceLabel: itemTypeLabel,
+        title: itemTypeLabel,
+        operationNumber,
+        operationRefs: [item.id],
+        serialNumber: item.serialNumber,
+        productName: itemTypeLabel,
+        statusText: item.status,
+        statusClass: "bg-slate-50 border border-slate-200 text-slate-700",
+        createdAt: item.createdAt,
+        route: item.currentOwnerId && item.itemTypeId
+          ? `/technician-details/${encodeURIComponent(item.currentOwnerId)}/item/${encodeURIComponent(item.itemTypeId)}`
+          : "/operations-search",
+        summary: item.ownerName ? t('common.technician_8', { var_0: item.ownerName }) : "",
+        searchable: [item.serialNumber, item.barcode || "", operationNumber, itemTypeLabel, item.ownerName || ""],
+        exactTokens: [item.serialNumber, item.barcode || "", operationNumber],
+        timeline,
+      };
+    });
+  }, [serializedItemMatches, t]);
+
+  const results = useMemo(() => {
+    const ranked = rankSearchResults(allResults, submittedQuery);
+    // serializedItemResults are already server-filtered by submittedQuery (the
+    // search endpoint only returns matches for the submitted q) — no need to
+    // re-run rankSearchResults on them, just merge and keep newest first.
+    return [...serializedItemResults, ...ranked].sort(
+      (first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
+    );
+  }, [allResults, serializedItemResults, submittedQuery]);
 
   useEffect(() => {
     if (!results.length) {
@@ -535,7 +610,7 @@ export default function OperationsSearchPage() {
   }, [results, selectedResultId]);
 
   const isLoading = isLoadingReceived || isLoadingWithdrawn || isLoadingTransfers || isLoadingItemTypes;
-  const error = receivedError || withdrawnError || transfersError;
+  const error = receivedError || withdrawnError || transfersError || serializedItemsError;
 
   const handleSearchSubmit = (event: React.FormEvent) => {
     event.preventDefault();
