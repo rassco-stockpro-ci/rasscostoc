@@ -451,19 +451,17 @@ export class DrizzleCourierRepository implements
 
   async deleteAllRequests(tx?: any): Promise<number> {
     const client = this.getClient(tx);
-    // 1. Reset any DELIVERED items back to active technician custody (RECEIVED_BY_TECHNICIAN)
+
+    // Reset DELIVERED items back to technician custody before clearing requests
     await client
       .update(items)
       .set({ status: "RECEIVED_BY_TECHNICIAN", updatedAt: new Date() })
       .where(eq(items.status, "DELIVERED"));
 
-    // 2. Clear all child courier tables
-    await client.delete(courierExecutionAttempts);
-    await client.delete(courierExecutions);
-    await client.delete(courierRequestItems);
+    // PDF reports use set-null (not cascade), so delete them explicitly first
     await client.delete(courierPdfReports);
 
-    // 3. Clear courier requests
+    // Delete requests — execution_attempts, executions, request_items cascade automatically
     const deletedRows = await client
       .delete(courierRequests)
       .returning({ id: courierRequests.id });
