@@ -110,18 +110,25 @@ export class CourierWorkflow {
     const { requestId, actorId, execution, request } = ctx;
 
     const eventBus = EventBus.getInstance();
-    
-    // We await publishing so any initial synchronous setup or logs run, 
-    // but the actual subscribers execute concurrently in setImmediate.
-    await eventBus.publish(
-      new ExecutionCompletedEvent({
-        requestId,
-        actorId,
-        execution,
-        request,
-      })
-    );
 
-    result.inventoryDeducted = true; // Handed off successfully
+    try {
+      await eventBus.publish(
+        new ExecutionCompletedEvent({
+          requestId,
+          actorId,
+          execution,
+          request,
+        })
+      );
+      result.inventoryDeducted = true;
+    } catch (err: any) {
+      // The execution was already committed to DB before this workflow runs.
+      // A failure here (e.g. synchronous subscriber error via publishLocal fallback)
+      // must NOT surface as HTTP 500 — the saga subscriber already published
+      // InventoryDeductionFailedEvent to compensate. Log and continue.
+      const msg = err?.message || "Failed to dispatch ExecutionCompletedEvent";
+      console.error(`[Workflow] handleInventoryDeduction error for request ${requestId}:`, err);
+      result.sideEffectErrors.push(msg);
+    }
   }
 }

@@ -18,7 +18,7 @@ import {
   itemHistoryLogs,
   regions,
 } from "@shared/schema";
-import { eq, and, or, sql, desc, count, inArray, ilike } from "drizzle-orm";
+import { eq, and, or, sql, desc, count, inArray, ilike, isNotNull } from "drizzle-orm";
 import type { ICourierRepository } from "../../domain/repositories/courier.repository.interface";
 import type { ICourierRequestsRepository } from "../../domain/repositories/ICourierRequestsRepository";
 import type { ICourierExecutionsRepository } from "../../domain/repositories/ICourierExecutionsRepository";
@@ -611,7 +611,30 @@ export class DrizzleCourierRepository implements
   async getLookups(tx?: any): Promise<any> {
     const client = this.getClient(tx);
     const cities = await client.select().from(courierCities);
-    const simTypes = await client.select().from(courierSimTypes);
+    const simTypesFromTable = await client.select().from(courierSimTypes);
+
+    // Auto-enrich: add distinct carrierNames from inventory items that are
+    // not already registered in courier_sim_types, so the dropdown always
+    // reflects what is physically in stock (e.g. STC added automatically).
+    let simTypes = simTypesFromTable;
+    try {
+      const inventoryCarriers = await client
+        .selectDistinct({ carrierName: items.carrierName })
+        .from(items)
+        .where(isNotNull(items.carrierName));
+
+      const existingNames = new Set(
+        simTypesFromTable.map((s: any) => (s.name || "").toLowerCase())
+      );
+      const extras = inventoryCarriers
+        .filter((c: any) => c.carrierName && !existingNames.has(c.carrierName.toLowerCase()))
+        .map((c: any, i: number) => ({ id: -(i + 1), name: c.carrierName }));
+
+      simTypes = [...simTypesFromTable, ...extras];
+    } catch {
+      // Fallback to table values only
+    }
+
     const vendorTypes = await client.select().from(courierVendorTypes);
     const failureReasons = await client.select().from(courierFailureReasons).orderBy(courierFailureReasons.sortOrder);
 
