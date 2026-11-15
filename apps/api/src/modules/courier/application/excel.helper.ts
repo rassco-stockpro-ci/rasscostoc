@@ -44,7 +44,7 @@ export const RAW_IMPORT_COLUMNS: Array<{ header: string; field: string; aliases:
   { header: "Date", field: "date", aliases: ["date", "تاريخ", "تاريخ الطلب", "التاريخ"] },
   { header: "Installation type", field: "installationType", aliases: ["installation type", "installationtype", "نوع التركيب", "العملية", "نوع الطلب"] },
   { header: "SIM", field: "sim", aliases: ["sim", "شريحة", "مزود الشريحة", "نوع الشريحة"] },
-  { header: "TID", field: "tid", aliases: ["tid", "رقم tid", "رقم المعاملة", "الرمز الذكي"] },
+  { header: "TID", field: "tid", aliases: ["tid", "terml id", "termlid", "رقم tid", "رقم المعاملة", "الرمز الذكي"] },
   { header: "OTP", field: "otp", aliases: ["otp", "رمز otp", "رمز التحقق"] },
   { header: "TICKETING HOLOULY", field: "ticketingHolouly", aliases: ["ticketing holouly", "ticketingholouly", "تذكرة حلولي", "بلاغ حلولي"] },
   { header: "INCIDENT NUMBER", field: "incidentNumber", aliases: ["incident number", "incidentnumber", "incident", "رقم البلاغ", "رقم التذكرة"] },
