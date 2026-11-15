@@ -51,6 +51,7 @@ interface RequestRow {
   tecName: string | null;
   execution: {
     installationStatus: string | null;
+    salesTechnician: string | null;
   } | null;
   version?: number;
 }
@@ -345,7 +346,7 @@ export default function CourierRawDataPage() {
                     <td className="text-[#4B5563]">{row.city || "—"}</td>
                     <td className="font-semibold text-[#2D3135]">{row.customerName || "—"}</td>
                     <td className="font-mono text-xs text-[#6B7280]">{row.mobile || "—"}</td>
-                    <td className="text-[#4B5563]">{row.tecName || "—"}</td>
+                    <td className="text-[#4B5563]">{row.execution?.salesTechnician || row.tecName || "—"}</td>
                     <td>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
