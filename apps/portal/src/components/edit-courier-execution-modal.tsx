@@ -203,8 +203,9 @@ export function EditCourierExecutionModal({
             salesTechnician: data.technician!.fullName,
           }));
         }
-        if (role === "sim" && data.found && data.itemType?.carrierName) {
-          setForm((prev) => ({ ...prev, simType: data.itemType!.carrierName! }));
+        if (role === "sim" && data.found) {
+          const carrier = data.itemType?.carrierName ?? data.carrierName;
+          if (carrier) setForm((prev) => ({ ...prev, simType: carrier }));
         }
       } catch {
         setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, loading: false } : r)));

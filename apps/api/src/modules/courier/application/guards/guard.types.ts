@@ -79,16 +79,19 @@ export interface TechUser {
   fullName: string;
 }
 
+import { AppError } from "@core/errors/AppError";
+
 /**
  * Thrown when a guard rejects the request.
  * No data should be written to DB after this error is thrown.
+ * Extends AppError so the global error handler returns 422 instead of 500.
  */
-export class GuardValidationError extends Error {
+export class GuardValidationError extends AppError {
   public readonly field?: string;
   public readonly auditAction: string = "verification_failed";
 
   constructor(message: string, field?: string) {
-    super(message);
+    super(message, 422, true, "GUARD_VALIDATION_ERROR");
     this.name = "GuardValidationError";
     this.field = field;
   }
