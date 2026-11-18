@@ -60,4 +60,13 @@ export function registerSerializedItemsRoutes(app: Express): void {
     requireAuth,
     controller.deleteFromMyCustody
   );
+
+  // Admin-only: delete any serialized item by its database ID regardless of custody or
+  // active courier references. Used by the verification page admin delete button.
+  // Gated by ENABLE_TECHNICIAN_CUSTODY_DELETE (same feature flag).
+  app.delete(
+    "/api/serialized-items/:id",
+    requireAuth,
+    controller.deleteByIdAdmin
+  );
 }

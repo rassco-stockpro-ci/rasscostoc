@@ -125,8 +125,9 @@ export class SerializedItemsController {
     }
 
     const user = req.user!;
-    if (user.role !== ROLES.TECHNICIAN) {
-      throw new AuthorizationError("هذه العملية متاحة للمندوب فقط");
+    const isAdmin = user.role === ROLES.ADMIN;
+    if (user.role !== ROLES.TECHNICIAN && !isAdmin) {
+      throw new AuthorizationError("هذه العملية متاحة للمندوب أو مدير النظام فقط");
     }
 
     const { itemType, identifier, serialNumber } = req.params;
@@ -147,7 +148,47 @@ export class SerializedItemsController {
       itemType,
       targetIdentifier,
       body.confirmation,
-      body.reason
+      body.reason,
+      isAdmin
+    );
+
+    res.status(200).json({
+      success: true,
+      itemType: result.itemType,
+      serialNumber: result.serialNumber,
+      deleted: result.deleted,
+      removedFromCustody: true,
+      productPreserved: true,
+      inventoryRecalculated: true,
+      alreadyDeleted: result.alreadyDeleted,
+    });
+  });
+
+  /**
+   * Admin-only: DELETE /api/serialized-items/:id
+   * Delete any serialized item by database ID, bypassing ownership and courier guards.
+   * Gated by the same ENABLE_TECHNICIAN_CUSTODY_DELETE feature flag.
+   */
+  deleteByIdAdmin = asyncHandler(async (req: Request, res: Response) => {
+    if (!isTechnicianCustodyDeleteEnabled()) {
+      throw new NotFoundError("المسار غير متاح");
+    }
+
+    const user = req.user!;
+    if (user.role !== ROLES.ADMIN) {
+      throw new AuthorizationError("هذه العملية متاحة لمدير النظام فقط");
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      throw new NotFoundError("معرّف العنصر مطلوب");
+    }
+
+    const result = await this.serializedItemsService.deleteByItemIdAdmin(
+      user.id,
+      user.username,
+      user.role,
+      id
     );
 
     res.status(200).json({

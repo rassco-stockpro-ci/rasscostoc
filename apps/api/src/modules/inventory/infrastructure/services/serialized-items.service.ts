@@ -343,7 +343,8 @@ export class SerializedItemsService {
     rawItemType: string,
     rawSerialNumber: string,
     confirmation: string,
-    reason?: string
+    reason?: string,
+    forceDelete?: boolean
   ) {
     const itemType = (rawItemType || "").trim().toUpperCase();
     const expectedCategory = CUSTODY_DELETE_ITEM_TYPE_TO_CATEGORY[itemType];
@@ -425,7 +426,8 @@ export class SerializedItemsService {
 
       // Custody check: never trust a client-supplied owner id — compare against the
       // row we just locked. Do not reveal who the actual current owner is.
-      if (item.currentOwnerId !== technicianId || !TECHNICIAN_HELD_STATUSES.includes(item.status)) {
+      // forceDelete (admin only) bypasses ownership so admins can delete from any technician's custody.
+      if (!forceDelete && (item.currentOwnerId !== technicianId || !TECHNICIAN_HELD_STATUSES.includes(item.status))) {
         throw new AppError(
           "لا يمكنك حذف عنصر غير موجود في عهدتك",
           403,
@@ -453,22 +455,26 @@ export class SerializedItemsService {
 
       // Active-operation guard: an open courier delivery/installation request for this
       // exact serial blocks deletion entirely (no cascade, no partial cleanup).
-      const linkedCourierRows = await tx
-        .select({ status: courierRequestItems.status })
-        .from(courierRequestItems)
-        .where(inArray(courierRequestItems.serialNumber, candidates));
+      // forceDelete (admin only) bypasses this guard — the admin accepts responsibility for
+      // any dangling courier references.
+      if (!forceDelete) {
+        const linkedCourierRows = await tx
+          .select({ status: courierRequestItems.status })
+          .from(courierRequestItems)
+          .where(inArray(courierRequestItems.serialNumber, candidates));
 
-      const hasActiveCourierRequest = linkedCourierRows.some(
-        (row: any) => !TERMINAL_COURIER_REQUEST_STATUSES.includes(row.status)
-      );
-
-      if (hasActiveCourierRequest) {
-        throw new AppError(
-          "لا يمكن حذف العنصر لارتباطه بعملية نشطة",
-          409,
-          true,
-          "ITEM_HAS_ACTIVE_RELATIONS"
+        const hasActiveCourierRequest = linkedCourierRows.some(
+          (row: any) => !TERMINAL_COURIER_REQUEST_STATUSES.includes(row.status)
         );
+
+        if (hasActiveCourierRequest) {
+          throw new AppError(
+            "لا يمكن حذف العنصر لارتباطه بعملية نشطة",
+            409,
+            true,
+            "ITEM_HAS_ACTIVE_RELATIONS"
+          );
+        }
       }
 
       // Durable audit record FIRST. system_logs.entityId/entityName carry no foreign key
@@ -494,6 +500,7 @@ export class SerializedItemsService {
           previousOwnerId: item.currentOwnerId,
           warehouseId: item.warehouseId,
           reason: auditReason,
+          forceDeleteByAdmin: forceDelete ? true : undefined,
           affectedTables: [
             "items",
             "inventory_transactions",
@@ -523,6 +530,59 @@ export class SerializedItemsService {
         alreadyDeleted: false,
       };
     });
+  }
+
+  /**
+   * Admin-only: delete any serialized item directly by its database ID.
+   * Bypasses ownership and active-courier-request guards (forceDelete=true).
+   * Used by the verification page admin delete button (DELETE /api/serialized-items/:id).
+   */
+  async deleteByItemIdAdmin(
+    adminId: string,
+    adminUsername: string,
+    adminRole: string,
+    itemId: string
+  ) {
+    // Reverse map: item_types.category → URL segment expected by deleteFromTechnicianCustody
+    const CATEGORY_TO_ITEM_TYPE: Record<string, string> = {
+      sim: "SIM",
+      devices: "DEVICE",
+    };
+
+    const [row] = await db
+      .select({
+        serialNumber: items.serialNumber,
+        category: itemTypes.category,
+      })
+      .from(items)
+      .leftJoin(itemTypes, eq(items.itemTypeId, itemTypes.id))
+      .where(eq(items.id, itemId))
+      .limit(1);
+
+    if (!row) {
+      throw new NotFoundError("العنصر غير موجود في النظام");
+    }
+
+    const itemType = CATEGORY_TO_ITEM_TYPE[row.category ?? ""];
+    if (!itemType) {
+      throw new AppError(
+        "نوع العنصر غير مدعوم للحذف المباشر",
+        400,
+        true,
+        "INVALID_ITEM_TYPE"
+      );
+    }
+
+    return this.deleteFromTechnicianCustody(
+      adminId,
+      adminUsername,
+      adminRole,
+      itemType,
+      row.serialNumber,
+      row.serialNumber,
+      "admin_force_delete_by_id",
+      true
+    );
   }
 
   /**
