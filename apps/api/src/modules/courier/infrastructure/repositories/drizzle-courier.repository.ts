@@ -49,6 +49,7 @@ import {
 } from "../courier-list-query";
 import { metrics } from "@core/telemetry/metrics";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
+import { AppError } from "@core/errors/AppError";
 
 export class DrizzleCourierRepository implements
   ICourierRepository,
@@ -931,8 +932,9 @@ export class DrizzleCourierRepository implements
     ];
     for (const pattern of forbidden) {
       if (filePath.toLowerCase().includes(pattern.toLowerCase())) {
-        throw new ValidationError(
-          `Zero Local Storage Violation: Forbidden local file path, blob, or binary payload detected in filePath: ${filePath}`
+        throw new AppError(
+          `Zero Local Storage Violation: Forbidden local file path, blob, or binary payload detected in filePath: ${filePath}`,
+          400, true, "LOCAL_STORAGE_VIOLATION"
         );
       }
     }

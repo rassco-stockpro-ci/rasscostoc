@@ -763,7 +763,6 @@ export class CourierService {
           .select({
             id: items.id,
             serialNumber: items.serialNumber,
-            simSerial: items.simSerial,
             carrierName: items.carrierName,
             status: items.status,
             currentOwnerId: items.currentOwnerId,
@@ -775,10 +774,8 @@ export class CourierService {
           .where(
             or(
               eq(items.serialNumber, rawSerial),
-              eq(items.simSerial, rawSerial),
               eq(items.barcode, rawSerial),
-              ilike(items.serialNumber, `%${rawSerial}%`),
-              ilike(items.simSerial, `%${rawSerial}%`)
+              ilike(items.serialNumber, `%${rawSerial}%`)
             )
           )
           .limit(1);
@@ -789,7 +786,7 @@ export class CourierService {
             found: true,
             serial: rawSerial,
             normalized: dbItem.serialNumber,
-            simSerial: dbItem.simSerial || dbItem.serialNumber,
+            simSerial: dbItem.serialNumber,
             carrierName: dbItem.carrierName,
             technician: dbItem.currentOwnerId ? {
               id: dbItem.currentOwnerId,
@@ -1878,7 +1875,7 @@ export class CourierService {
     notes?: string;
   }): Promise<any> {
     const simSerial = (data.simSerial || "").trim();
-    if (!simSerial) throw new ValidationError("رقم الشريحة مطلوب");
+    if (!simSerial) throw new AppError("رقم الشريحة مطلوب", 400, true, "SIM_SERIAL_REQUIRED");
 
     let targetOwnerId = data.technicianId || null;
 

@@ -90,6 +90,7 @@ interface RequestDetail {
 interface SerialLookupResult {
   found: boolean;
   normalized?: string;
+  carrierName?: string | null;
   itemType?: { id: string; nameAr: string; category: string; carrierName: string | null } | null;
   technician?: { id: string; fullName: string; username: string; technicianCode: string | null } | null;
   custodyStatus?: string | null;
