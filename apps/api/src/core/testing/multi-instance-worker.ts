@@ -13,10 +13,17 @@
 import "dotenv/config";
 process.env.NODE_ENV = "production"; // rateLimiter is a no-op outside production
 process.env.BYPASS_OUTBOX = "false";
+// This worker binds to plain HTTP; prevent cookie.secure=true which would make
+// express-session skip Set-Cookie entirely (shouldSetCookie returns false when
+// secure=true but req.secure=false).  TRUST_PROXY=true from .env would flip
+// isHttps=true inside setupSession, so clear both flags explicitly.
+delete process.env.TRUST_PROXY;
+process.env.HTTPS = "false";
 
 import express from "express";
 import { rateLimiter } from "@core/middlewares/security.middleware";
 import { setupSession } from "@core/config/session";
+import { pool } from "@core/config/db";
 import { jobsWorker } from "@core/jobs/jobs.worker";
 import { jobsRepository } from "@core/jobs/jobs.repository";
 import { jobsRegistry } from "@core/jobs/jobs.registry";
@@ -34,7 +41,9 @@ setupSession(app);
 
 app.post("/login", (req, res) => {
   req.session.user = { id: "user-1", role: "admin", username: "tester", regionId: null };
-  res.json({ ok: true, instance: instanceId });
+  req.session.save(() => {
+    res.json({ ok: true, instance: instanceId });
+  });
 });
 
 app.get("/whoami", (req, res) => {
@@ -78,6 +87,14 @@ if (process.argv[4] === "with-jobs-worker") {
   });
 }
 
-app.listen(port, () => {
-  console.log(`WORKER_READY instance=${instanceId} port=${port}`);
+// Warm up the pool so the session store can save on the very first request.
+// Without this, connect-pg-simple's first save races against the pool's
+// initial connection and fails silently, causing no Set-Cookie header.
+pool.query("SELECT 1").then(() => {
+  app.listen(port, () => {
+    console.log(`WORKER_READY instance=${instanceId} port=${port}`);
+  });
+}).catch((err: Error) => {
+  console.error(`WORKER_DB_ERROR: ${err.message}`);
+  process.exit(1);
 });

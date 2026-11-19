@@ -120,6 +120,7 @@ export const courierExecutions = pgTable("courier_executions", {
   salesTechnician: text("sales_technician"),
   technicianCode: text("technician_code"),
   extractionConfidence: text("extraction_confidence"),
+  deductionStatus: varchar("deduction_status", { length: 20 }),
   enteredBy: varchar("entered_by").references(() => users.id),
   enteredAt: timestamp("entered_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

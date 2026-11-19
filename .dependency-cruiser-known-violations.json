@@ -2,20 +2,6 @@
   {
     "type": "dependency",
     "from": "apps/api/src/modules/courier/application/courier.service.ts",
-    "to": "apps/api/src/modules/courier/infrastructure/repositories/drizzle-courier.repository.ts",
-    "unresolvedTo": "../infrastructure/repositories/drizzle-courier.repository",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/courier.service.ts",
     "to": "node_modules/drizzle-orm/index.js",
     "unresolvedTo": "drizzle-orm",
     "dependencyTypes": [
@@ -29,151 +15,11 @@
   },
   {
     "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/execution-attempts.test.ts",
-    "to": "apps/api/src/modules/courier/infrastructure/repositories/drizzle-courier.repository.ts",
-    "unresolvedTo": "../infrastructure/repositories/drizzle-courier.repository",
+    "from": "apps/api/src/modules/identity/presentation/controllers/employee-profile.controller.ts",
+    "to": "apps/api/src/modules/identity/infrastructure/database/EmployeeProfileRepository.ts",
+    "unresolvedTo": "../../infrastructure/database/EmployeeProfileRepository",
     "dependencyTypes": [
       "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/guards/CustodyGuard.ts",
-    "to": "node_modules/drizzle-orm/index.js",
-    "unresolvedTo": "drizzle-orm",
-    "dependencyTypes": [
-      "npm",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/guards/TechnicianGuard.ts",
-    "to": "node_modules/drizzle-orm/index.js",
-    "unresolvedTo": "drizzle-orm",
-    "dependencyTypes": [
-      "npm",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/inventory/inventory.engine.ts",
-    "to": "apps/api/src/modules/courier/infrastructure/adapters/DevicesServiceAdapter.ts",
-    "unresolvedTo": "../../infrastructure/adapters/DevicesServiceAdapter",
-    "dependencyTypes": [
-      "local",
-      "require"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/inventory/inventory.engine.ts",
-    "to": "apps/api/src/modules/courier/infrastructure/adapters/SerializedItemsAdapter.ts",
-    "unresolvedTo": "../../infrastructure/adapters/SerializedItemsAdapter",
-    "dependencyTypes": [
-      "local",
-      "require"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/inventory/inventory.engine.ts",
-    "to": "node_modules/drizzle-orm/index.js",
-    "unresolvedTo": "drizzle-orm",
-    "dependencyTypes": [
-      "npm",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/optimistic-locking.test.ts",
-    "to": "node_modules/drizzle-orm/index.js",
-    "unresolvedTo": "drizzle-orm",
-    "dependencyTypes": [
-      "npm",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/workflow/courier.workflow.test.ts",
-    "to": "apps/api/src/modules/courier/infrastructure/subscribers/courier-audit.subscriber.ts",
-    "unresolvedTo": "../../../courier/infrastructure/subscribers/courier-audit.subscriber",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/workflow/courier.workflow.test.ts",
-    "to": "apps/api/src/modules/courier/infrastructure/subscribers/courier-saga.subscriber.ts",
-    "unresolvedTo": "../../../courier/infrastructure/subscribers/courier-saga.subscriber",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/workflow/courier.workflow.test.ts",
-    "to": "apps/api/src/modules/inventory/infrastructure/subscribers/inventory.subscriber.ts",
-    "unresolvedTo": "../../../inventory/infrastructure/subscribers/inventory.subscriber",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "application-should-not-depend-on-presentation-infrastructure-or-drizzle"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/inventory/presentation/routes/serialized-items.routes.ts",
-    "to": "node_modules/drizzle-orm/index.js",
-    "unresolvedTo": "drizzle-orm",
-    "dependencyTypes": [
-      "npm",
       "import"
     ],
     "rule": {
@@ -183,90 +29,53 @@
   },
   {
     "type": "dependency",
-    "from": "apps/api/src/modules/inventory/presentation/routes/warehouse-transfer-operations.routes.ts",
-    "to": "apps/api/src/modules/inventory/infrastructure/database/DrizzleInventoryUnitOfWork.ts",
-    "unresolvedTo": "@modules/inventory/infrastructure/database/DrizzleInventoryUnitOfWork",
+    "from": "apps/api/src/core/middlewares/idempotency.integration.test.ts",
+    "to": "apps/api/src/modules/inventory/infrastructure/database/DrizzleInventoryEntriesRepository.ts",
+    "unresolvedTo": "@modules/inventory/infrastructure/database/DrizzleInventoryEntriesRepository",
     "dependencyTypes": [
       "aliased",
       "aliased-tsconfig",
       "aliased-tsconfig-paths",
       "local",
-      "import"
+      "dynamic-import"
     ],
     "rule": {
       "severity": "error",
-      "name": "controller-should-not-depend-on-repository-or-drizzle"
+      "name": "core-should-not-depend-on-business-modules"
     }
   },
   {
     "type": "dependency",
-    "from": "apps/api/src/modules/inventory/presentation/routes/warehouse-transfer-operations.routes.ts",
-    "to": "node_modules/drizzle-orm/index.js",
-    "unresolvedTo": "drizzle-orm",
+    "from": "apps/api/src/core/middlewares/idempotency.integration.test.ts",
+    "to": "apps/api/src/modules/inventory/infrastructure/database/DrizzleTechnicianMovingInventoryReadRepository.ts",
+    "unresolvedTo": "@modules/inventory/infrastructure/database/DrizzleTechnicianMovingInventoryReadRepository",
     "dependencyTypes": [
-      "npm",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "controller-should-not-depend-on-repository-or-drizzle"
-    }
-  },
-
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/inventory/domain/custody-engine.ts",
-    "to": "node_modules/drizzle-orm/index.js",
-    "unresolvedTo": "drizzle-orm",
-    "dependencyTypes": [
-      "npm",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "domain-should-not-depend-on-application-presentation-infrastructure"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/application/workflow/courier.workflow.test.ts",
-    "to": "apps/api/src/modules/inventory/infrastructure/subscribers/inventory.subscriber.ts",
-    "unresolvedTo": "../../../inventory/infrastructure/subscribers/inventory.subscriber",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "no-cross-module-internal-imports"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "apps/api/src/modules/courier/infrastructure/adapters/SerializedItemsAdapter.ts",
-    "to": "apps/api/src/modules/inventory/infrastructure/services/serialized-items.service.ts",
-    "unresolvedTo": "../../../inventory/infrastructure/services/serialized-items.service",
-    "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
       "local",
       "dynamic-import"
     ],
     "rule": {
       "severity": "error",
-      "name": "no-cross-module-internal-imports"
+      "name": "core-should-not-depend-on-business-modules"
     }
   },
   {
     "type": "dependency",
-    "from": "apps/api/src/modules/inventory/infrastructure/subscribers/inventory.subscriber.ts",
-    "to": "apps/api/src/modules/courier/application/inventory/inventory.engine.ts",
-    "unresolvedTo": "../../../courier/application/inventory/inventory.engine",
+    "from": "apps/api/src/core/middlewares/idempotency.integration.test.ts",
+    "to": "apps/api/src/modules/inventory/infrastructure/database/movingInventoryReconciliation.ts",
+    "unresolvedTo": "@modules/inventory/infrastructure/database/movingInventoryReconciliation",
     "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
       "local",
-      "import"
+      "dynamic-import"
     ],
     "rule": {
       "severity": "error",
-      "name": "no-cross-module-internal-imports"
+      "name": "core-should-not-depend-on-business-modules"
     }
   },
   {
@@ -285,16 +94,19 @@
   },
   {
     "type": "dependency",
-    "from": "apps/api/src/modules/identity/presentation/controllers/employee-profile.controller.ts",
-    "to": "apps/api/src/modules/identity/infrastructure/database/EmployeeProfileRepository.ts",
-    "unresolvedTo": "../../infrastructure/database/EmployeeProfileRepository",
+    "from": "apps/api/src/modules/identity/infrastructure/database/DrizzleAdminDashboardRepository.ts",
+    "to": "apps/api/src/modules/inventory/infrastructure/database/movingInventoryReconciliation.ts",
+    "unresolvedTo": "@modules/inventory/infrastructure/database/movingInventoryReconciliation",
     "dependencyTypes": [
+      "aliased",
+      "aliased-tsconfig",
+      "aliased-tsconfig-paths",
       "local",
       "import"
     ],
     "rule": {
       "severity": "error",
-      "name": "controller-should-not-depend-on-repository-or-drizzle"
+      "name": "no-cross-module-internal-imports"
     }
   }
 ]

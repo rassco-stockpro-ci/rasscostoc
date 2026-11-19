@@ -47,6 +47,11 @@ async function startServer() {
     readinessManager.setJobsWorkerStarted(true);
     lifecycleCoordinator.register("jobsWorker", () => jobsWorker.stop());
 
+    // Start Inventory Reconciliation Worker (ERP-INV-001)
+    const { inventoryReconciliationWorker } = await import("@core/inventory/inventory-reconciliation.worker");
+    inventoryReconciliationWorker.start();
+    lifecycleCoordinator.register("inventoryReconciliationWorker", () => inventoryReconciliationWorker.stop());
+
     lifecycleCoordinator.register("sessionStore", () => closeSessionStore());
     lifecycleCoordinator.register("databasePool", () => closeDatabase());
 

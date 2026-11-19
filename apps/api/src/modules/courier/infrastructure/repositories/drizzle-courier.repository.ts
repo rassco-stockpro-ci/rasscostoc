@@ -477,7 +477,10 @@ export class DrizzleCourierRepository implements
 
     if (logData.changedBy && (!actorNameSnapshot || !actorRoleSnapshot || !actorAvatarUrl)) {
       try {
-        const userRow = await client
+        // Use bare `db` (not the caller's transaction client) so a lookup failure
+        // cannot poison the surrounding write transaction with a PostgreSQL
+        // "current transaction is aborted" state.  This enrichment is best-effort.
+        const userRow = await db
           .select({
             fullName: users.fullName,
             role: users.role,
@@ -491,7 +494,7 @@ export class DrizzleCourierRepository implements
           if (!actorNameSnapshot) actorNameSnapshot = userRow[0].fullName;
           if (!actorAvatarUrl) actorAvatarUrl = userRow[0].profileImage;
           if (!actorRoleSnapshot) {
-            const empProfile = await client
+            const empProfile = await db
               .select({ profileData: employeeProfiles.profileData })
               .from(employeeProfiles)
               .where(eq(employeeProfiles.userId, logData.changedBy))

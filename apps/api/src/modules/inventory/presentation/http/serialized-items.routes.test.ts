@@ -229,7 +229,8 @@ describe("Serialized Items HTTP Integration Tests", () => {
         "DEVICE",
         "SN-DEVICE-777",
         "SN-DEVICE-777",
-        undefined
+        undefined,
+        false
       );
     });
 
@@ -257,7 +258,8 @@ describe("Serialized Items HTTP Integration Tests", () => {
         "SIM",
         "89966020000000123456",
         "89966020000000123456",
-        "temporary_cleanup_before_customer_handover"
+        "temporary_cleanup_before_customer_handover",
+        false
       );
     });
 
@@ -286,7 +288,8 @@ describe("Serialized Items HTTP Integration Tests", () => {
         "DEVICE",
         "SN-DEVICE-777",
         "SN-DEVICE-777",
-        undefined
+        undefined,
+        false
       );
     });
 

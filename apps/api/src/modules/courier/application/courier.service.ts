@@ -1792,6 +1792,7 @@ export class CourierService {
             customerNotes: data.notes || execution.customerNotes,
             extraField1: data.evidencePhotos ? JSON.stringify(data.evidencePhotos) : execution.extraField1,
             extraField2: data.customerSignature || execution.extraField2,
+            deductionStatus: "PENDING",
             updatedAt: new Date()
           },
           execution.version

@@ -71,9 +71,19 @@ function killProcessTree(child: ChildProcess): void {
   }
 }
 
+// Node.js 22+ (undici v6+): Set-Cookie is a forbidden response-header name per
+// the WHATWG Fetch spec, so headers.get("set-cookie") always returns null.
+// Use getSetCookie() (returns string[]) when available, fall back otherwise.
+function getSetCookieHeader(res: Response): string | null {
+  if (typeof (res.headers as any).getSetCookie === "function") {
+    return (res.headers as any).getSetCookie()[0] ?? null;
+  }
+  return res.headers.get("set-cookie");
+}
+
 async function getReq(port: number, path: string, cookie?: string) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers: cookie ? { cookie } : {} });
-  return { status: res.status, body: await res.json().catch(() => null), setCookie: res.headers.get("set-cookie") };
+  return { status: res.status, body: await res.json().catch(() => null), setCookie: getSetCookieHeader(res) };
 }
 
 async function postReq(port: number, path: string, cookie?: string) {
@@ -81,7 +91,7 @@ async function postReq(port: number, path: string, cookie?: string) {
     method: "POST",
     headers: cookie ? { cookie } : {},
   });
-  return { status: res.status, body: await res.json().catch(() => null), setCookie: res.headers.get("set-cookie") };
+  return { status: res.status, body: await res.json().catch(() => null), setCookie: getSetCookieHeader(res) };
 }
 
 describe("ERP-008 Phase 4 — multi-process integration", () => {

@@ -3,6 +3,7 @@ import path from "path";
 
 export default defineConfig({
   test: {
+    globalSetup: ["./vitest.global-setup.ts"],
     environment: "node",
     include: [
       "apps/api/**/*.test.ts",
