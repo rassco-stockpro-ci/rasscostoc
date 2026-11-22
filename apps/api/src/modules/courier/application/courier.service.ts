@@ -626,7 +626,7 @@ export class CourierService {
     const request = await this.requestsRepo.findRequestById(requestId);
 
     if (!request) {
-      throw new Error("الطلب غير موجود");
+      throw new NotFoundError("الطلب غير موجود");
     }
 
     // Whitelist writable columns only — client payloads often include enteredAt/updatedAt
@@ -717,7 +717,7 @@ export class CourierService {
     });
 
     if (!result) {
-      throw new Error("Failed to save execution: database returned no rows.");
+      throw new AppError("Failed to save execution: database returned no rows.", 500);
     }
 
     // ─── Workflow Engine ──────────────────────────────────────────────────────

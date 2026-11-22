@@ -2,6 +2,7 @@ import { db } from "../config/db";
 import { idempotencyRecords } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { metrics } from "../telemetry/metrics";
+import { IdempotencyCollisionError } from "../errors/AppError";
 
 export class IdempotencyService {
   /**
@@ -39,7 +40,7 @@ export class IdempotencyService {
           return;
         }
         if (existing.status === "PROCESSING") {
-          throw new Error(`Idempotency key ${idempotencyKey} is currently PROCESSING.`);
+          throw new IdempotencyCollisionError(`Idempotency key ${idempotencyKey} is currently PROCESSING.`);
         }
         // If status is FAILED, retry: reset status back to PROCESSING
         await tx

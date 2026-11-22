@@ -49,7 +49,7 @@ import {
 } from "../courier-list-query";
 import { metrics } from "@core/telemetry/metrics";
 import { SerialRecognitionService } from "@core/serial/serial-recognition.service";
-import { AppError } from "@core/errors/AppError";
+import { AppError, ConflictError } from "@core/errors/AppError";
 
 export class DrizzleCourierRepository implements
   ICourierRepository,
@@ -430,15 +430,22 @@ export class DrizzleCourierRepository implements
   async insertExecution(executionData: any, tx?: any): Promise<CourierExecution> {
     const client = this.getClient(tx);
     const mappedData = CourierExecutionMapper.toPersistence(executionData);
-    const [row] = await client
-      .insert(courierExecutions)
-      .values({
-        ...mappedData,
-        enteredAt: new Date(),
-        updatedAt: new Date()
-      })
-      .returning();
-    return CourierExecutionMapper.toDomain(row);
+    try {
+      const [row] = await client
+        .insert(courierExecutions)
+        .values({
+          ...mappedData,
+          enteredAt: new Date(),
+          updatedAt: new Date()
+        })
+        .returning();
+      return CourierExecutionMapper.toDomain(row);
+    } catch (err: any) {
+      if (err?.code === "23505") {
+        throw new ConflictError("تعذّر حفظ التنفيذ: طلب آخر يعالج هذا السجل الآن. حاول مجدداً.");
+      }
+      throw err;
+    }
   }
 
   async deleteRequest(id: number, tx?: any): Promise<boolean> {

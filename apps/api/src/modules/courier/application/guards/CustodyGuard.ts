@@ -124,16 +124,20 @@ export class CustodyGuard {
       );
 
       if (!link) {
-        await ctx.requestsRepo.insertRequestItems([{
-          requestId,
-          itemType: "POS",
-          serialNumber: entry.serialNumber,
-          quantity: 1,
-          status: "RECEIVED",
-          scannedAt: new Date(),
-          receivedAt: new Date(),
-          technicianId: techUser.id,
-        }]);
+        try {
+          await ctx.requestsRepo.insertRequestItems([{
+            requestId,
+            itemType: "POS",
+            serialNumber: entry.serialNumber,
+            quantity: 1,
+            status: "RECEIVED",
+            scannedAt: new Date(),
+            receivedAt: new Date(),
+            technicianId: techUser.id,
+          }]);
+        } catch {
+          // Auto-bind is best-effort; a duplicate or FK conflict should not block closure
+        }
       }
     }
 
@@ -143,16 +147,20 @@ export class CustodyGuard {
       );
 
       if (!simLink) {
-        await ctx.requestsRepo.insertRequestItems([{
-          requestId,
-          itemType: "SIM",
-          simSerial: entry.serialNumber,
-          quantity: 1,
-          status: "RECEIVED",
-          scannedAt: new Date(),
-          receivedAt: new Date(),
-          technicianId: techUser.id,
-        }]);
+        try {
+          await ctx.requestsRepo.insertRequestItems([{
+            requestId,
+            itemType: "SIM",
+            simSerial: entry.serialNumber,
+            quantity: 1,
+            status: "RECEIVED",
+            scannedAt: new Date(),
+            receivedAt: new Date(),
+            technicianId: techUser.id,
+          }]);
+        } catch {
+          // Auto-bind is best-effort; a duplicate or FK conflict should not block closure
+        }
       }
     }
   }
